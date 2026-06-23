@@ -18,9 +18,11 @@ env/
 *.ipynb_checkpoints/
 
 # Data + results (generated)
-data/*.parquet
-data/*.csv
-data/*.joblib
+# Allow committing the demo dataset + classifier so the prototype is
+# reproducible from GitHub without re-running the notebook.
+# data/*.parquet
+# data/*.csv
+# data/*.joblib
 data/*.npy
 results/*.png
 results/*.csv
