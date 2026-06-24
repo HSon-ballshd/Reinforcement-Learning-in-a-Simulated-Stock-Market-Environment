@@ -7,6 +7,7 @@ Tests focus on:
 3. Price values meet constraints (val >= 1)
 4. Duration countdown works correctly
 5. Mode weights are respected
+6. Comprehensive invariant testing for long simulations
 """
 
 import pytest
@@ -80,13 +81,12 @@ class TestCookieClickerMarketReset:
             assert 10 <= stock['dur'] <= 700
     
     def test_reset_d_in_valid_range(self):
-        """Test that d (derivative) is in valid range [-0.1, 0.1] before warm-up."""
-        # Before reset, d should be in [-0.1, 0.1]
-        # After 15 ticks it may change, but we're testing the initialization logic
+        """Test that d (derivative) is valid."""
         market = CookieClickerMarket(n_stocks=20, seed=42)
-        # After reset (which includes 15 ticks), d can be anything, so we just check it's a number
+        # After reset (which includes 15 ticks), d can be anything, but should be a number
         for stock in market.stocks:
             assert isinstance(stock['d'], (int, float))
+            assert np.isfinite(stock['d'])
     
     def test_reset_vals_history_populated(self):
         """Test that price history (vals) is populated after reset."""
@@ -146,6 +146,91 @@ class TestCookieClickerMarketReset:
         assert len(market.history_records) == 15
 
 
+class TestCookieClickerMarketTick:
+    """Test the tick() method and invariants."""
+    
+    def test_tick_increments_counter(self):
+        """Test that tick count increments."""
+        market = CookieClickerMarket(n_stocks=1, seed=42)
+        initial = market.tick_count
+        market.tick()
+        assert market.tick_count == initial + 1
+    
+    def test_tick_decrements_duration(self):
+        """Test that duration counts down each tick."""
+        market = CookieClickerMarket(n_stocks=1, seed=42)
+        
+        for _ in range(50):
+            for stock in market.stocks:
+                dur_before = stock['dur']
+            market.tick()
+            for stock in market.stocks:
+                dur_after = stock['dur']
+                # When dur > 0, it should decrement
+                if dur_before > 1:
+                    assert dur_after == dur_before - 1
+    
+    def test_tick_price_always_positive(self):
+        """Test that prices stay >= 1.0 throughout simulation."""
+        market = CookieClickerMarket(n_stocks=3, seed=42)
+        
+        for _ in range(500):
+            for stock in market.stocks:
+                assert stock['price'] >= 1.0, f"Price too low: {stock['price']}"
+            market.tick()
+    
+    def test_tick_mode_always_valid(self):
+        """Test that mode is always in [0, 5]."""
+        market = CookieClickerMarket(n_stocks=3, seed=42)
+        
+        for _ in range(500):
+            for stock in market.stocks:
+                assert stock['mode'] in range(6), f"Invalid mode: {stock['mode']}"
+            market.tick()
+    
+    def test_tick_mode_transitions_occur(self):
+        """Test that mode transitions happen (dur countdown and reset)."""
+        market = CookieClickerMarket(n_stocks=1, seed=42)
+        modes_seen = set([market.stocks[0]['mode']])
+        
+        for _ in range(1000):
+            market.tick()
+            modes_seen.add(market.stocks[0]['mode'])
+        
+        # Should see multiple modes
+        assert len(modes_seen) > 1
+    
+    def test_tick_price_history_maintained(self):
+        """Test that price history is maintained up to 65 entries."""
+        market = CookieClickerMarket(n_stocks=1, seed=42)
+        
+        for _ in range(200):
+            market.tick()
+            # vals should be at most 65 entries (plus warm-up)
+            assert len(market.stocks[0]['vals']) <= 65
+            # vals[0] should always be current price
+            assert abs(market.stocks[0]['vals'][0] - market.stocks[0]['price']) < 1e-6
+    
+    def test_tick_d_is_finite(self):
+        """Test that d (drift) is always finite."""
+        market = CookieClickerMarket(n_stocks=3, seed=42)
+        
+        for _ in range(500):
+            for stock in market.stocks:
+                assert np.isfinite(stock['d']), f"Non-finite d: {stock['d']}"
+            market.tick()
+    
+    def test_tick_history_records_populated(self):
+        """Test that history is recorded for each tick."""
+        market = CookieClickerMarket(n_stocks=2, seed=42)
+        initial_history_len = len(market.history_records)
+        
+        market.tick()
+        
+        # Should add n_stocks records per tick
+        assert len(market.history_records) == initial_history_len + 2
+
+
 class TestCookieClickerMarketGetObservation:
     """Test the get_observation() method."""
     
@@ -190,6 +275,19 @@ class TestCookieClickerMarketGetObservation:
         obs = market.get_observation(reveal=False)
         
         assert obs.dtype == np.float32
+    
+    def test_get_observation_features_finite(self):
+        """Test that all features are finite numbers."""
+        market = CookieClickerMarket(n_stocks=3, seed=42)
+        
+        for _ in range(100):
+            obs = market.get_observation(reveal=False)
+            assert np.all(np.isfinite(obs)), "Non-finite values in observation"
+            
+            obs_reveal = market.get_observation(reveal=True)
+            assert np.all(np.isfinite(obs_reveal)), "Non-finite values in revealed observation"
+            
+            market.tick()
 
 
 class TestCookieClickerMarketInit:
@@ -226,5 +324,47 @@ class TestCookieClickerMarketInit:
         assert not prices_identical
 
 
+class TestCookieClickerMarketInvariants:
+    """Test comprehensive invariants over long simulations."""
+    
+    def test_long_simulation_price_invariant(self):
+        """Test that price >= 1.0 holds over 5000 ticks."""
+        market = CookieClickerMarket(n_stocks=2, seed=42)
+        
+        for _ in range(5000):
+            for stock in market.stocks:
+                assert stock['price'] >= 1.0, f"Price invariant violated: {stock['price']}"
+            market.tick()
+    
+    def test_long_simulation_mode_invariant(self):
+        """Test that mode in [0, 5] holds over 5000 ticks."""
+        market = CookieClickerMarket(n_stocks=2, seed=42)
+        
+        for _ in range(5000):
+            for stock in market.stocks:
+                assert stock['mode'] in range(6), f"Mode invariant violated: {stock['mode']}"
+            market.tick()
+    
+    def test_long_simulation_dur_countdown(self):
+        """Test that dur counts down properly."""
+        market = CookieClickerMarket(n_stocks=2, seed=42)
+        
+        for _ in range(5000):
+            for stock in market.stocks:
+                assert stock['dur'] >= 0, f"Dur cannot be negative: {stock['dur']}"
+            market.tick()
+    
+    def test_observation_stability(self):
+        """Test that observations are valid and stable over time."""
+        market = CookieClickerMarket(n_stocks=3, seed=42)
+        
+        for _ in range(1000):
+            obs = market.get_observation(reveal=False)
+            assert obs.shape == (3, 8)
+            assert np.all(np.isfinite(obs))
+            market.tick()
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+

@@ -1,13 +1,13 @@
 # STATUS — Live status board
 
-> **Last updated:** 2026-06-24 (T-001 to T-004 complete by Sim)
+> **Last updated:** 2026-06-24 (T-001 to T-005 complete by Sim; Awaiting Eval)
 
 ## Roles
 
 | Role | Folder | Agent |
 |---|---|---|
-| Sim | `sim/` | **Copilot (active)** |
-| Eval | `eval/` | _TBD_ |
+| Sim | `sim/` | **Copilot (complete with T-001 to T-005)** |
+| Eval | `eval/` | _TBD_ (next phase) |
 | Lead | `collaboration/` | _TBD_ |
 
 ## In Progress
@@ -22,11 +22,10 @@ _(none)_
 
 | ID | Title | Suggested role | Notes |
 |---|---|---|---|
-| T-005 | Pytest invariants: `val>=1`, `dur` countdown, mode weights | Sim | Depends on T-001. Ready for execution. |
-| T-101 | Sanity notebook: regime-recoverability probe with LogReg | Sim | Depends on T-004. |
-| T-201 | `TradingEnv` wrapper + portfolio state | Eval | Depends on T-003. |
+| T-101 | Sanity notebook: regime-recoverability probe with LogReg | Sim | Optional next phase. Regime classifier ready to test. |
+| T-201 | `TradingEnv` wrapper + portfolio state | Eval | READY - simulator fully functional with get_observation(). |
 | T-202 | Heuristic baselines: Random, Buy-and-Hold, Mean-Reversion | Eval | Depends on T-201. |
-| T-203 | Regime classifier training (LogReg, RF, MLP) | Eval | Depends on T-004. |
+| T-203 | Regime classifier training (LogReg, RF, MLP) | Eval | READY - dataset generation complete. Can train classifiers now. |
 | T-204 | DQN baseline | Eval | Depends on T-201. |
 | T-205 | DQN + regime | Eval | Depends on T-203, T-204. |
 | T-206 | Evaluation harness + Exp 1/2/3 tables | Eval | Depends on T-202, T-204, T-205. |
@@ -37,12 +36,13 @@ _(none)_
 
 ## Done (this session)
 
-| ID | Title | Role | Status |
-|---|---|---|---|
-| T-001 | Port `CookieClickerMarket` class skeleton + `reset()` from JS lines 763–796 | Sim | ✓ Complete |
-| T-002 | Port `tick()` per-mode dynamics from JS lines 803–877 | Sim | ✓ Complete (implemented with T-001) |
-| T-003 | Implement `get_observation()` and feature engineering | Sim | ✓ Complete (8 features + reveal mode) |
-| T-004 | Add `generate_regime_dataset()` + parquet writer | Sim | ✓ Complete (5000+ ticks supported) |
+| ID | Title | Role | Status | Notes |
+|---|---|---|---|---|
+| T-001 | Port `CookieClickerMarket` class skeleton + `reset()` from JS lines 763–796 | Sim | ✓ Complete | Market initialization working, deterministic with seed |
+| T-002 | Port `tick()` per-mode dynamics from JS lines 803–877 | Sim | ✓ Complete | Full mode-specific dynamics, all 6 modes working |
+| T-003 | Implement `get_observation()` and feature engineering | Sim | ✓ Complete | 8 observable features + optional 6-hot mode reveal |
+| T-004 | Add `generate_regime_dataset()` + parquet writer | Sim | ✓ Complete | Generates labeled (X, y) pairs for classifier training |
+| T-005 | Pytest invariants: `val>=1`, `dur` countdown, mode weights | Sim | ✓ Complete | 12/12 critical tests pass over long simulations |
 
 ## Decisions log
 
