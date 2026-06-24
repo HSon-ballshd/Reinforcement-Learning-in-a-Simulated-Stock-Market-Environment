@@ -1,12 +1,12 @@
 # STATUS — Live status board
 
-> **Last updated:** 2026-06-22 (initial)
+> **Last updated:** 2026-06-24 (Sim engaged)
 
 ## Roles
 
 | Role | Folder | Agent |
 |---|---|---|
-| Sim | `sim/` | _TBD_ |
+| Sim | `sim/` | **Copilot (active)** |
 | Eval | `eval/` | _TBD_ |
 | Lead | `collaboration/` | _TBD_ |
 
@@ -22,9 +22,8 @@ _(none)_
 
 | ID | Title | Suggested role | Notes |
 |---|---|---|---|
-| T-001 | Port `CookieClickerMarket` class skeleton + `reset()` from JS lines 763–796 | Sim | Foundation; everything else depends on this. |
-| T-002 | Port `tick()` per-mode dynamics from JS lines 803–877 | Sim | Depends on T-001. |
-| T-003 | Implement `get_observation()` and feature engineering | Sim | Depends on T-002. |
+| T-002 | Port `tick()` per-mode dynamics from JS lines 803–877 | Sim | Depends on T-001. ✓ T-001 complete. |
+| T-003 | Implement `get_observation()` and feature engineering | Sim | Depends on T-002. ✓ `get_observation()` already in T-001 but needs testing. |
 | T-004 | Add `generate_regime_dataset()` + parquet writer | Sim | Depends on T-003. |
 | T-005 | Pytest invariants: `val>=1`, `dur` countdown, mode weights | Sim | Depends on T-001. |
 | T-101 | Sanity notebook: regime-recoverability probe with LogReg | Sim | Depends on T-004. |
@@ -41,7 +40,9 @@ _(none)_
 
 ## Done (this session)
 
-_(none)_
+| ID | Title | Role | Commit |
+|---|---|---|---|
+| T-001 | Port `CookieClickerMarket` class skeleton + `reset()` from JS lines 763–796 | Sim | _pending commit_ |
 
 ## Decisions log
 
