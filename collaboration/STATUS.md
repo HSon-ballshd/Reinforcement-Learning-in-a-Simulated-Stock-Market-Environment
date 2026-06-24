@@ -66,7 +66,9 @@ _(none)_
 
 ## Handoffs
 
-_(none)_
+| ID | FROM | TO | NEEDS | ACCEPT |
+|---|---|---|---|---|
+| H-001 | Sim | Eval | Market simulator fully tested and ready. Call `CookieClickerMarket(seed=42)` and `generate_regime_dataset()` to start. | Eval imports sim module without errors; can generate dataset and wrap in `TradingEnv`. |
 
 ## Concerns
 
