@@ -1,6 +1,6 @@
 # STATUS — Live status board
 
-> **Last updated:** 2026-06-24 (Sim engaged)
+> **Last updated:** 2026-06-24 (T-001 to T-004 complete by Sim)
 
 ## Roles
 
@@ -22,10 +22,7 @@ _(none)_
 
 | ID | Title | Suggested role | Notes |
 |---|---|---|---|
-| T-002 | Port `tick()` per-mode dynamics from JS lines 803–877 | Sim | Depends on T-001. ✓ T-001 complete. |
-| T-003 | Implement `get_observation()` and feature engineering | Sim | Depends on T-002. ✓ `get_observation()` already in T-001 but needs testing. |
-| T-004 | Add `generate_regime_dataset()` + parquet writer | Sim | Depends on T-003. |
-| T-005 | Pytest invariants: `val>=1`, `dur` countdown, mode weights | Sim | Depends on T-001. |
+| T-005 | Pytest invariants: `val>=1`, `dur` countdown, mode weights | Sim | Depends on T-001. Ready for execution. |
 | T-101 | Sanity notebook: regime-recoverability probe with LogReg | Sim | Depends on T-004. |
 | T-201 | `TradingEnv` wrapper + portfolio state | Eval | Depends on T-003. |
 | T-202 | Heuristic baselines: Random, Buy-and-Hold, Mean-Reversion | Eval | Depends on T-201. |
@@ -40,9 +37,12 @@ _(none)_
 
 ## Done (this session)
 
-| ID | Title | Role | Commit |
+| ID | Title | Role | Status |
 |---|---|---|---|
-| T-001 | Port `CookieClickerMarket` class skeleton + `reset()` from JS lines 763–796 | Sim | _pending commit_ |
+| T-001 | Port `CookieClickerMarket` class skeleton + `reset()` from JS lines 763–796 | Sim | ✓ Complete |
+| T-002 | Port `tick()` per-mode dynamics from JS lines 803–877 | Sim | ✓ Complete (implemented with T-001) |
+| T-003 | Implement `get_observation()` and feature engineering | Sim | ✓ Complete (8 features + reveal mode) |
+| T-004 | Add `generate_regime_dataset()` + parquet writer | Sim | ✓ Complete (5000+ ticks supported) |
 
 ## Decisions log
 
