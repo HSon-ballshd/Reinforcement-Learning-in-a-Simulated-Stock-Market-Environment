@@ -304,22 +304,63 @@ def run_h3(config: EvalConfig) -> dict:
     # classify closure: uses clf/scaler (from outer scope) and agent._env (set at call time)
     def make_classify_fn(agent, clf, scaler):
         def classify(obs: np.ndarray) -> int:
-            """Classify regime using scaler + clf on 13 features."""
+            """Classify regime using scaler + clf on 18 features."""
             env = agent._env
             stock = env.market.stocks[0]
             vals  = stock['vals']
-            return_1   = (vals[0] - vals[1]) / vals[1] if len(vals) > 1 else 0.0
-            return_5   = (vals[0] - vals[4]) / vals[4] if len(vals) > 4 else 0.0
-            return_20  = (vals[0] - vals[19]) / vals[19] if len(vals) > 19 else 0.0
-            mean_5     = float(np.mean(vals[:5]))  if len(vals) >= 5  else float(np.mean(vals))
-            mean_20    = float(np.mean(vals[:20])) if len(vals) >= 20 else float(np.mean(vals))
-            std_20     = float(np.std(vals[:20]))  if len(vals) >= 20 else float(np.std(vals))
-            momentum   = return_5 - return_20
-            base = np.array([return_1, return_5, return_20,
-                             mean_5, mean_20, std_20, momentum], dtype=np.float32)
-            extended = env._get_extended_features()
-            x = np.concatenate([base, extended]).reshape(1, -1)
-            x = scaler.transform(x)
+            price = stock['price']
+
+            tick_rets = [
+                (vals[i] - vals[i+1]) / (vals[i+1] + 1e-8)
+                for i in range(min(len(vals) - 1, 64))
+            ]
+            def trets(n): return tick_rets[:n]
+
+            ret_1  = tick_rets[0] if len(tick_rets) >= 1 else 0.0
+            ret_5  = (vals[0] - vals[4]) / vals[4] if len(vals) > 4 else 0.0
+            ret_10 = (vals[0] - vals[9]) / vals[9] if len(vals) > 9 else 0.0
+            ret_20 = (vals[0] - vals[19]) / vals[19] if len(vals) > 19 else 0.0
+
+            rstd_5  = float(np.std(trets(5)))  if len(tick_rets) >= 5  else 0.0
+            rstd_20 = float(np.std(trets(20))) if len(tick_rets) >= 20 else 0.0
+            rstd_ratio = rstd_5 / (rstd_20 + 1e-8)
+
+            mean_20 = float(np.mean(vals[:20])) if len(vals) >= 20 else float(np.mean(vals))
+            mean_rev_z = (price - mean_20) / (rstd_20 * mean_20 + 1e-8) if rstd_20 > 1e-8 else 0.0
+
+            def dir_cons(n):
+                t = trets(n)
+                return float(sum(1 for r in t if r > 0) / len(t)) if t else 0.5
+            dir_5  = dir_cons(5)
+            dir_20 = dir_cons(20)
+
+            t5 = trets(5)
+            drift_est_5 = float(np.mean([abs(r) * (1 if r > 0 else -1) for r in t5])) if t5 else 0.0
+
+            def jump_count(n, rstd):
+                return float(sum(1 for r in trets(n) if abs(r) > rstd)) if rstd > 1e-8 else 0.0
+            jc_5  = jump_count(5,  rstd_5)
+            jc_20 = jump_count(20, rstd_20)
+
+            max_ret_5 = float(max((abs(r) for r in trets(5)), default=0.0))
+
+            def trend_str(ret, rstd):
+                return float(ret / (rstd + 1e-8)) if rstd > 1e-8 else 0.0
+            trend_5  = trend_str(ret_5,  rstd_5)
+            trend_20 = trend_str(ret_20, rstd_20)
+
+            mom_div = 1.0 if ret_5 * ret_20 < 0 else 0.0
+            vol_reg  = rstd_5 / (rstd_20 + 1e-8)
+
+            base = np.array([
+                ret_1, ret_5, ret_10, ret_20,
+                rstd_5, rstd_20, rstd_ratio, mean_rev_z,
+                dir_5, dir_20, drift_est_5,
+                jc_5, jc_20, max_ret_5,
+                trend_5, trend_20, mom_div, vol_reg,
+            ], dtype=np.float32)
+
+            x = scaler.transform(base.reshape(1, -1))
             return int(clf.predict(x)[0])
         return classify
 

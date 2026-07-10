@@ -44,17 +44,26 @@ class RegimeClassifierPipeline:
     """
 
     FEATURE_COLS = [
-        # Original 7
-        'return_1', 'return_5', 'return_20',
-        'rolling_mean_5', 'rolling_mean_20', 'rolling_std_20',
-        'momentum_5_20',
-        # New 6 — regime-discriminating features
-        'drift_proxy',        # EMA return as proxy for hidden drift d
-        'vol_ratio',          # short/long volatility — Chaotic/Strong are high-vol
-        'mean_reversion_signal',  # z-score of price vs long mean
-        'directional_consistency',  # % up-ticks in last 5 — Stable ~50%, Strong Bull high
-        'sharpe_proxy',       # mean_ret / std over 20 — Strong Bull/Bear have high |Sharpe|
-        'momentum_divergence',   # return_1 sign × return_20 sign — Chaotic flips sign
+        # === Returns at multiple timescales ===
+        'return_1', 'return_5', 'return_10', 'return_20',
+        # === Volatility and mean-reversion ===
+        'rolling_std_5', 'rolling_std_20', 'rolling_std_ratio',
+        'mean_reversion_z',      # (price - rolling_mean_20) / rolling_std_20
+        # === Drift / directional pressure ===
+        'directional_consistency_5',  # % up-ticks in last 5
+        'directional_consistency_20', # % up-ticks in last 20
+        'drift_estimate_5',     # sign-weighted mean return over 5 ticks
+        # === Jump detection (key for Strong Bull/Bear) ===
+        'jump_count_5',         # number of |tick_return| > 1 std_5 in last 5
+        'jump_count_20',        # number of |tick_return| > 1 std_20 in last 20
+        'max_tick_return_5',   # max |tick_return| in last 5 — Strong modes have large jumps
+        # === Trend strength ===
+        'trend_strength_5',     # return_5 / rolling_std_5 — trending vs noisy
+        'trend_strength_20',    # return_20 / rolling_std_20
+        # === Momentum divergence (Chaotic flips direction) ===
+        'momentum_divergence',  # 1 if return_1 and return_20 disagree in sign
+        # === Volatility regime ===
+        'vol_regime_5',        # std_5 / rolling_std_20 — high = volatile/Chaotic
     ]
     # 'price' is excluded — it scales with bank_level and stock_id, not regime.
 
@@ -146,9 +155,7 @@ class RegimeClassifierPipeline:
         Classify a single market observation.
 
         Args:
-            observation: array-like of shape (7,) or (13,).
-                        7 = raw features from FEATURE_COLS (for offline use).
-                        13 = raw 7 + 6 engineered features (for live use).
+            observation: array-like of shape (18,) matching FEATURE_COLS order.
 
         Returns:
             Predicted regime (0–5).
@@ -156,9 +163,6 @@ class RegimeClassifierPipeline:
         if self.scaler is None or self.best_model is None:
             raise RuntimeError("Pipeline not run yet — call run() first.")
         x = np.asarray(observation, dtype=np.float32).reshape(1, -1)
-        # Pad to 13 if given 7 (legacy single-feature callers)
-        if x.shape[1] == 7:
-            x = np.hstack([x, np.zeros((1, 6), dtype=np.float32)])
         x = self.scaler.transform(x)
         return int(self.best_model.predict(x)[0])
 

@@ -141,63 +141,70 @@ class TradingEnv:
     # ------------------------------------------------------------------
     def _get_extended_features(self) -> np.ndarray:
         """
-        Return the 6 engineered features needed by the regime classifier.
+        Return the 11 extended features needed by the regime classifier.
 
-        These are NOT part of the agent's observation — they are only used
+        These are NOT part of the agent's 8-dim observation — they are only used
         by the harness classify() wrapper injected into RegimeAwareDQNAgent.
         """
         stock = self.market.stocks[0]
         vals  = stock['vals']
         price = stock['price']
 
-        # --- match dataset.py feature computations ---
-        # return_1, return_5, return_20, rolling_mean_5/20, rolling_std_20, momentum_5_20
-        # are already available from the market's get_observation but we recompute
-        # from vals to keep the extended feature set self-consistent.
-        return_1   = (vals[0] - vals[1]) / vals[1] if len(vals) > 1 else 0.0
-        return_5   = (vals[0] - vals[4]) / vals[4] if len(vals) > 4 else 0.0
-        return_20  = (vals[0] - vals[19]) / vals[19] if len(vals) > 19 else 0.0
-        mean_20    = float(np.mean(vals[:20]))  if len(vals) >= 20 else float(np.mean(vals))
-        std_20     = float(np.std(vals[:20]))   if len(vals) >= 20 else float(np.std(vals))
+        # Tick-return list (i=0 is most recent)
+        tick_rets = [
+            (vals[i] - vals[i+1]) / (vals[i+1] + 1e-8)
+            for i in range(min(len(vals) - 1, 64))
+        ]
+        def trets(n): return tick_rets[:n]
 
-        drift_proxy = 0.6 * return_1 + 0.4 * return_5
+        # Rolling volatility
+        rstd_5  = float(np.std(trets(5)))  if len(tick_rets) >= 5  else 0.0
+        rstd_20 = float(np.std(trets(20))) if len(tick_rets) >= 20 else 0.0
+        rstd_ratio = rstd_5 / (rstd_20 + 1e-8)
 
-        if len(vals) >= 5:
-            std_5 = float(np.std(
-                [(vals[i] - vals[i+1]) / (vals[i+1] + 1e-8)
-                 for i in range(min(4, len(vals)-1))]
-            ))
-            vol_ratio = std_5 / (std_20 + 1e-8)
-        else:
-            vol_ratio = 0.0
+        # Rolling mean for mean-reversion z-score
+        mean_20 = float(np.mean(vals[:20])) if len(vals) >= 20 else float(np.mean(vals))
 
-        mean_reversion_signal = (
-            (price - mean_20) / (std_20 + 1e-8) if std_20 > 1e-8 else 0.0
-        )
+        # Mean-reversion z-score
+        mean_rev_z = (price - mean_20) / (rstd_20 * mean_20 + 1e-8) if rstd_20 > 1e-8 else 0.0
 
-        if len(vals) >= 3:
-            tick_rets = [(vals[i] - vals[i+1]) / (vals[i+1] + 1e-8)
-                         for i in range(min(5, len(vals)-1))]
-            directional_consistency = sum(1 for r in tick_rets if r > 0) / len(tick_rets)
-        else:
-            directional_consistency = 0.5
+        # Directional consistency
+        def dir_cons(n):
+            t = trets(n)
+            return float(sum(1 for r in t if r > 0) / len(t)) if t else 0.5
+        dir_5  = dir_cons(5)
+        dir_20 = dir_cons(20)
 
-        if len(vals) >= 5:
-            tret = [(vals[i] - vals[i+1]) / (vals[i+1] + 1e-8)
-                    for i in range(min(19, len(vals)-1))]
-            sharpe_proxy = float(np.mean(tret)) / (float(np.std(tret)) + 1e-8)
-        else:
-            sharpe_proxy = 0.0
+        # Drift estimate (sign-weighted mean return)
+        t5 = trets(5)
+        drift_est_5 = float(np.mean([abs(r) * (1 if r > 0 else -1) for r in t5])) if t5 else 0.0
 
-        momentum_divergence = 1.0 if return_1 * return_20 < 0 else 0.0
+        # Jump counts
+        def jump_count(n, rstd):
+            return float(sum(1 for r in trets(n) if abs(r) > rstd)) if rstd > 1e-8 else 0.0
+        jc_5  = jump_count(5,  rstd_5)
+        jc_20 = jump_count(20, rstd_20)
+
+        # Max tick return in last 5
+        max_ret_5 = float(max((abs(r) for r in trets(5)), default=0.0))
+
+        # Trend strength
+        ret_5  = trets(5)[0]  if len(tick_rets) >= 5  else 0.0
+        ret_20 = trets(20)[0] if len(tick_rets) >= 20 else 0.0
+        trend_5  = float(ret_5  / (rstd_5  + 1e-8)) if rstd_5  > 1e-8 else 0.0
+        trend_20 = float(ret_20 / (rstd_20 + 1e-8)) if rstd_20 > 1e-8 else 0.0
+
+        # Momentum divergence
+        mom_div = 1.0 if ret_5 * ret_20 < 0 else 0.0
+
+        # Vol regime
+        vol_reg = rstd_5 / (rstd_20 + 1e-8)
 
         return np.array([
-            drift_proxy,
-            vol_ratio,
-            mean_reversion_signal,
-            directional_consistency,
-            sharpe_proxy,
-            momentum_divergence,
+            rstd_5, rstd_20, rstd_ratio, mean_rev_z,
+            dir_5, dir_20, drift_est_5,
+            jc_5, jc_20, max_ret_5,
+            trend_5, trend_20, mom_div, vol_reg,
         ], dtype=np.float32)
 
     # ------------------------------------------------------------------

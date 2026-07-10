@@ -26,25 +26,30 @@ from eval.classifiers.regime_classifier import (
 def small_dataset(tmp_path):
     """
     Create a tiny synthetic parquet file:
-    500 rows, 6 regimes, 13 features + mode column.
+    500 rows, 6 regimes, 18 features + mode column.
     """
     n = 500
     rng = np.random.default_rng(0)
 
     data = {
-        'return_1':       rng.standard_normal(n),
-        'return_5':       rng.standard_normal(n),
-        'return_20':      rng.standard_normal(n),
-        'rolling_mean_5': rng.uniform(5, 20, n),
-        'rolling_mean_20': rng.uniform(5, 20, n),
-        'rolling_std_20': rng.uniform(0.1, 5, n),
-        'momentum_5_20': rng.standard_normal(n),
-        'drift_proxy': rng.standard_normal(n),
-        'vol_ratio': rng.uniform(0.1, 3, n),
-        'mean_reversion_signal': rng.standard_normal(n),
-        'directional_consistency': rng.uniform(0, 1, n),
-        'sharpe_proxy': rng.standard_normal(n),
+        'return_1':   rng.standard_normal(n),
+        'return_5':   rng.standard_normal(n),
+        'return_10':  rng.standard_normal(n),
+        'return_20':  rng.standard_normal(n),
+        'rolling_std_5':   rng.uniform(0.1, 5, n),
+        'rolling_std_20':  rng.uniform(0.1, 5, n),
+        'rolling_std_ratio': rng.uniform(0.1, 3, n),
+        'mean_reversion_z': rng.standard_normal(n),
+        'directional_consistency_5':  rng.uniform(0, 1, n),
+        'directional_consistency_20': rng.uniform(0, 1, n),
+        'drift_estimate_5':  rng.standard_normal(n),
+        'jump_count_5':  rng.integers(0, 5, n),
+        'jump_count_20': rng.integers(0, 10, n),
+        'max_tick_return_5': rng.uniform(0, 3, n),
+        'trend_strength_5':  rng.standard_normal(n),
+        'trend_strength_20': rng.standard_normal(n),
         'momentum_divergence': rng.integers(0, 2, n),
+        'vol_regime_5': rng.uniform(0.1, 3, n),
         'mode':          rng.integers(0, 6, n),
     }
     df = pd.DataFrame(data)
@@ -123,7 +128,12 @@ class TestRegimeClassifierPredict:
         )
         pipe.run()
 
-        obs = np.array([0.01, 0.05, 0.02, 10.0, 10.5, 0.5, 0.1])
+        # 18 features matching FEATURE_COLS
+        obs = np.array([0.01, 0.05, 0.02, 0.01,
+                        0.5, 0.8, 0.6, 0.2,
+                        0.6, 0.55, 0.05,
+                        1, 3, 0.5,
+                        0.1, 0.05, 0, 0.7])
         pred = pipe.predict(obs)
         assert isinstance(pred, int)
         assert 0 <= pred < N_CLASSES
@@ -134,7 +144,12 @@ class TestRegimeClassifierPredict:
             out_dir=tmp_path / "models",
         )
         pipe.run()
-        pred = pipe.predict([0.01, 0.05, 0.02, 10.0, 10.5, 0.5, 0.1])
+        obs = [0.01, 0.05, 0.02, 0.01,
+               0.5, 0.8, 0.6, 0.2,
+               0.6, 0.55, 0.05,
+               1, 3, 0.5,
+               0.1, 0.05, 0, 0.7]
+        pred = pipe.predict(obs)
         assert 0 <= pred < N_CLASSES
 
 
