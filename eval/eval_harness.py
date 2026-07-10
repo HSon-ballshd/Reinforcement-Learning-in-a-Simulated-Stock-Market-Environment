@@ -292,7 +292,7 @@ def run_h3(config: EvalConfig) -> dict:
             max_episode_steps=config.episode_steps,
             eval_steps=500,
             initial_cash=config.initial_cash,
-            verbose=False,   # verbose output already emitted inside train_dqn
+            verbose=True,
         )
         dqn.save("models/dqn_agent.pkl")
 
@@ -332,7 +332,6 @@ def run_h3(config: EvalConfig) -> dict:
             eval_steps=500,
             initial_cash=config.initial_cash,
             train_seeds=train_seeds,
-            verbose=False,
         )
         ra_dqn.save("models/ra_dqn_agent.pkl")
 
@@ -391,7 +390,6 @@ def _train_ra(
     eval_steps: int,
     initial_cash: float,
     train_seeds: list[int] | None = None,
-    verbose: bool = True,
 ) -> dict:
     """
     Train a regime-aware DQN agent.
@@ -421,7 +419,7 @@ def _train_ra(
     if train_seeds:
         eval_seed_pool = [s for s in eval_seed_pool if s not in train_seeds]
 
-    iterator = tqdm(range(n_steps), desc="RA-DQN", unit="step", disable=not verbose)
+    iterator = tqdm(range(n_steps), desc="RA-DQN", unit="step")
 
     for step in iterator:
         action    = agent._epsilon_greedy(obs, training=True)
