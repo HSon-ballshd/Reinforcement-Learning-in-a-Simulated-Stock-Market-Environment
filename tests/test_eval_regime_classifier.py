@@ -72,15 +72,18 @@ class TestRegimeClassifierPipelineInit:
 
 
 class TestRegimeClassifierPipelineRun:
-    def test_run_produces_scores(self, small_dataset, tmp_path):
+    def test_run_produces_three_way_scores(self, small_dataset, tmp_path):
+        """run() returns val_scores, test_scores, and best_name."""
         pipe = RegimeClassifierPipeline(
             data_path=small_dataset,
             out_dir=tmp_path / "models",
         )
-        scores = pipe.run()
-        assert isinstance(scores, dict)
-        assert set(scores.keys()) == {"LogReg", "RandomForest", "MLP"}
-        for acc in scores.values():
+        result = pipe.run()
+        assert set(result.keys()) == {"val_scores", "test_scores", "best_name"}
+        # val_scores has one entry per model
+        assert set(result["val_scores"].keys()) == {"LogReg", "RandomForest", "MLP"}
+        assert set(result["test_scores"].keys()) == {"LogReg", "RandomForest", "MLP"}
+        for acc in list(result["val_scores"].values()) + list(result["test_scores"].values()):
             assert 0.0 <= acc <= 1.0
 
     def test_best_model_selected(self, small_dataset, tmp_path):
@@ -88,10 +91,11 @@ class TestRegimeClassifierPipelineRun:
             data_path=small_dataset,
             out_dir=tmp_path / "models",
         )
-        pipe.run()
+        result = pipe.run()
         assert pipe.best_name in {"LogReg", "RandomForest", "MLP"}
         assert pipe.best_model is not None
-        assert pipe.best_name == max(pipe.scores, key=pipe.scores.get)
+        assert pipe.best_name == result["best_name"]
+        assert pipe.best_name == max(pipe.val_scores, key=pipe.val_scores.get)
 
     def test_run_saves_artifacts(self, small_dataset, tmp_path):
         out_dir = tmp_path / "models"

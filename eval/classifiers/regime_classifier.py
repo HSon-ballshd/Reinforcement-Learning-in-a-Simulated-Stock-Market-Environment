@@ -32,7 +32,12 @@ N_CLASSES = len(REGIME_NAMES)
 
 class RegimeClassifierPipeline:
     """
-    End-to-end pipeline: load data → scale → train → evaluate.
+    End-to-end pipeline: load data → split → scale → train → evaluate.
+
+    Uses a three-way split to avoid selection bias:
+        60% train  — fit the scaler and train models
+        20% val    — select the best model (no leakage)
+        20% test   — report final accuracy on held-out data
 
     Three models are trained and the best one (by val accuracy) is kept
     as `self.best_model`.  All models are serialised to `out_dir`.
@@ -49,50 +54,84 @@ class RegimeClassifierPipeline:
         self,
         data_path: str | Path = "data/regime_dataset.parquet",
         out_dir: str | Path = "models",
+        train_size: float = 0.6,
+        val_size: float = 0.2,
         test_size: float = 0.2,
         random_state: int = 42,
     ) -> None:
         self.data_path    = Path(data_path)
         self.out_dir     = Path(out_dir)
+        self.train_size  = train_size
+        self.val_size    = val_size
         self.test_size   = test_size
         self.random_state = random_state
 
-        self.scaler: StandardScaler | None       = None
-        self.models: dict[str, object]            = {}
-        self.scores:  dict[str, float]            = {}
-        self.best_name: str                        = ''
-        self.best_model: object | None             = None
+        self.scaler: StandardScaler | None     = None
+        self.models: dict[str, object]          = {}
+        self.val_scores: dict[str, float]      = {}
+        self.test_scores: dict[str, float]     = {}
+        self.best_name: str                    = ''
+        self.best_model: object | None         = None
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def run(self) -> dict[str, float]:
+    def run(self) -> dict:
         """
-        Run the full pipeline: load → split → scale → train → evaluate.
+        Run the full three-way pipeline.
 
-        Returns a dict mapping model name → test accuracy.
+        Returns a dict with:
+            - val_scores  (used for model selection)
+            - test_scores (final held-out accuracy)
+            - best_name   (which model was selected)
         """
         df = self._load_data()
-        X_train, X_test, y_train, y_test = self._split(df)
-        X_train, X_test = self._scale(X_train, X_test)
+        X_train_val, X_test, y_train_val, y_test = self._split(df, self.train_size + self.val_size)
+        X_train, X_val, y_train, y_val = self._split(
+            (X_train_val, y_train_val), self.train_size / (self.train_size + self.val_size)
+        )
 
+        # Scale: fit on train only, apply to val and test
+        X_train, X_val, X_test = self._scale(X_train, X_val, X_test)
+
+        # Train all models on train split
         for name, model in self._model_factory().items():
             model.fit(X_train, y_train)
-            preds   = model.predict(X_test)
-            acc     = accuracy_score(y_test, preds)
+            # Validate on val split (no leakage into model selection)
+            val_preds = model.predict(X_val)
+            val_acc   = accuracy_score(y_val, val_preds)
             self.models[name] = model
-            self.scores[name] = acc
-            print(f"{name}: accuracy = {acc:.4f}")
+            self.val_scores[name] = val_acc
+            print(f"  {name}: val_acc = {val_acc:.4f}")
 
-        # Select best model
-        self.best_name  = max(self.scores, key=self.scores.get)
+        # Select best model by val accuracy
+        self.best_name  = max(self.val_scores, key=self.val_scores.get)
         self.best_model = self.models[self.best_name]
-        print(f"\nBest model: {self.best_name} ({self.scores[self.best_name]:.4f})")
+        print(f"\n  Best (by val): {self.best_name} ({self.val_scores[self.best_name]:.4f})")
+
+        # Report test accuracy ONLY for the selected best model
+        test_preds = self.best_model.predict(X_test)
+        test_acc   = accuracy_score(y_test, test_preds)
+        self.test_scores[self.best_name] = test_acc
+        print(f"  Test accuracy ({self.best_name}): {test_acc:.4f}")
+
+        # Report test accuracy for all models (transparency)
+        print(f"\n  All models — test accuracy:")
+        for name, model in self.models.items():
+            tp = model.predict(X_test)
+            ta = accuracy_score(y_test, tp)
+            self.test_scores[name] = ta
+            mark = " ← SELECTED" if name == self.best_name else ""
+            print(f"    {name}: {ta:.4f}{mark}")
 
         self._save()
-        self._report_detail(X_test, y_test)
+        self._report_detail(X_test, y_test, self.best_name)
 
-        return self.scores
+        return {
+            "val_scores":  self.val_scores,
+            "test_scores": self.test_scores,
+            "best_name":   self.best_name,
+        }
 
     def predict(self, observation: np.ndarray) -> int:
         """
@@ -132,22 +171,37 @@ class RegimeClassifierPipeline:
 
         return df
 
-    def _split(self, df: pd.DataFrame):
-        X = df[self.FEATURE_COLS].values
-        y = df['mode'].values
+    def _split(self, Xy, test_size: float):
+        """
+        Split data into two parts.
+
+        Accepts either:
+            - a DataFrame (first call) → extracts features/labels and splits
+            - a tuple (X, y)         → splits both arrays directly
+        """
+        if isinstance(Xy, pd.DataFrame):
+            X = Xy[self.FEATURE_COLS].values
+            y = Xy['mode'].values
+        else:
+            X, y = Xy
 
         return train_test_split(
             X, y,
-            test_size=self.test_size,
+            test_size=test_size,
             random_state=self.random_state,
             stratify=y,
         )
 
-    def _scale(self, X_train, X_test):
+    def _scale(self, X_train, X_val, X_test):
+        """
+        Fit scaler on train only; transform val and test with it.
+        This prevents leakage — test data never influences normalisation.
+        """
         self.scaler = StandardScaler()
         X_train = self.scaler.fit_transform(X_train)
+        X_val   = self.scaler.transform(X_val)
         X_test  = self.scaler.transform(X_test)
-        return X_train, X_test
+        return X_train, X_val, X_test
 
     def _model_factory(self) -> dict:
         return {
@@ -180,9 +234,11 @@ class RegimeClassifierPipeline:
         pickle.dump(self.models,        open(self.out_dir / "all_models.pkl",   "wb"))
         print(f"\nSaved models to {self.out_dir}/")
 
-    def _report_detail(self, X_test, y_test) -> None:
-        preds = self.best_model.predict(X_test)
-        print(f"\nClassification report for {self.best_name}:")
+    def _report_detail(self, X_test, y_test, model_name: str | None = None) -> None:
+        model = self.models[model_name or self.best_name]
+        preds = model.predict(X_test)
+        name  = model_name or self.best_name
+        print(f"\nClassification report for {name}:")
         print(classification_report(
             y_test, preds,
             target_names=[REGIME_NAMES[i] for i in range(N_CLASSES)],
@@ -199,11 +255,18 @@ if __name__ == "__main__":
     out_dir   = Path(sys.argv[2]) if len(sys.argv) > 2 else "models"
 
     pipeline = RegimeClassifierPipeline(data_path=data_path, out_dir=out_dir)
-    scores = pipeline.run()
+    result = pipeline.run()
 
-    # Baseline: random guessing
+    # val_scores: used for model selection (reported transparently)
     baseline = 1.0 / N_CLASSES
-    print(f"\nBaseline (random): {baseline:.4f}")
-    for name, acc in scores.items():
-        delta = acc - baseline
-        print(f"  {name}: {delta:+.4f} vs random")
+    print(f"\n--- Val Accuracy (model selection) ---")
+    print(f"Baseline (random): {baseline:.4f}")
+    for name, acc in result["val_scores"].items():
+        mark = " ← SELECTED" if name == result["best_name"] else ""
+        print(f"  {name}: {acc:.4f}  (Δ {acc - baseline:+.4f}){mark}")
+
+    # test_scores: held-out accuracy (final reported number)
+    print(f"\n--- Test Accuracy (held-out, final) ---")
+    for name, acc in result["test_scores"].items():
+        mark = " ← SELECTED" if name == result["best_name"] else ""
+        print(f"  {name}: {acc:.4f}  (Δ {acc - baseline:+.4f}){mark}")
