@@ -1,18 +1,18 @@
 # STATUS — Live status board
 
-> **Last updated:** 2026-06-24 (T-001 to T-005 complete by Sim; Awaiting Eval)
+> **Last updated:** 2026-07-10 (T-201–T-206 ALL COMPLETE)
 
 ## Roles
 
 | Role | Folder | Agent |
 |---|---|---|
 | Sim | `sim/` | **Copilot (complete with T-001 to T-005)** |
-| Eval | `eval/` | _TBD_ (next phase) |
+| Eval | `eval/` | **Lead (acting as Eval — ALL DONE T-201 to T-206)** |
 | Lead | `collaboration/` | _TBD_ |
 
 ## In Progress
 
-_(none)_
+_(none — all tasks complete)_
 
 ## Claimed
 
@@ -22,13 +22,7 @@ _(none)_
 
 | ID | Title | Suggested role | Notes |
 |---|---|---|---|
-| T-101 | Sanity notebook: regime-recoverability probe with LogReg | Sim | Optional next phase. Regime classifier ready to test. |
-| T-201 | `TradingEnv` wrapper + portfolio state | Eval | READY - simulator fully functional with get_observation(). |
-| T-202 | Heuristic baselines: Random, Buy-and-Hold, Mean-Reversion | Eval | Depends on T-201. |
-| T-203 | Regime classifier training (LogReg, RF, MLP) | Eval | READY - dataset generation complete. Can train classifiers now. |
-| T-204 | DQN baseline | Eval | Depends on T-201. |
-| T-205 | DQN + regime | Eval | Depends on T-203, T-204. |
-| T-206 | Evaluation harness + Exp 1/2/3 tables | Eval | Depends on T-202, T-204, T-205. |
+| T-101 | Sanity notebook: regime-recoverability probe with LogReg | Sim | Optional next phase. Classifier and baselines ready to compare. |
 
 ## Blocked
 
@@ -38,6 +32,12 @@ _(none)_
 
 | ID | Title | Role | Status | Notes |
 |---|---|---|---|---|
+| T-201 | `TradingEnv` wrapper + portfolio state | Eval | ✓ Complete | 11/11 tests pass; Gym-style (reset/step/render), 3 actions, transaction-cost reward |
+| T-202 | Heuristic baselines: Random, Buy-and-Hold, Mean-Reversion | Eval | ✓ Complete | 18/18 tests pass; evaluate_agent(), compare_baselines() |
+| T-203 | Regime classifier training (LogReg, RF, MLP) | Eval | ✓ Complete | 11/11 tests pass; full pipeline with scaling, scoring, pickle save |
+| T-204 | DQN baseline | Eval | ✓ Complete | 15/15 tests pass; Q-network, replay buffer, epsilon-greedy, save/load |
+| T-205 | DQN + regime | Eval | ✓ Complete | 15/15 tests pass; regime-aware Q-net (14-dim), classifier injection |
+| T-206 | Evaluation harness + Exp 1/2/3 tables | Eval | ✓ Complete | 4/4 tests pass; run_all() with H1/H2/H3 + JSON output |
 | T-001 | Port `CookieClickerMarket` class skeleton + `reset()` from JS lines 763–796 | Sim | ✓ Complete | Market initialization working, deterministic with seed |
 | T-002 | Port `tick()` per-mode dynamics from JS lines 803–877 | Sim | ✓ Complete | Full mode-specific dynamics, all 6 modes working |
 | T-003 | Implement `get_observation()` and feature engineering | Sim | ✓ Complete | 8 observable features + optional 6-hot mode reveal |
@@ -68,7 +68,7 @@ _(none)_
 
 | ID | FROM | TO | NEEDS | ACCEPT |
 |---|---|---|---|---|
-| H-001 | Sim | Eval | Market simulator fully tested and ready. Call `CookieClickerMarket(seed=42)` and `generate_regime_dataset()` to start. | Eval imports sim module without errors; can generate dataset and wrap in `TradingEnv`. |
+| H-001 | Sim | Eval | Market simulator fully tested and ready. Call `CookieClickerMarket(seed=42)` and `generate_regime_dataset()` to start. | **ACCEPTED** — Eval imports sim; TradingEnv wraps market; dataset pipeline in place. |
 
 ## Concerns
 
