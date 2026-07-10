@@ -12,7 +12,11 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import (
+    RandomForestClassifier,
+    ExtraTreesClassifier,
+    GradientBoostingClassifier,
+)
 from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -222,21 +226,37 @@ class RegimeClassifierPipeline:
     def _model_factory(self) -> dict:
         return {
             "LogReg": LogisticRegression(
-                max_iter=1000,
+                max_iter=2000,
                 solver='lbfgs',
+                C=0.5,
                 random_state=self.random_state,
             ),
             "RandomForest": RandomForestClassifier(
-                n_estimators=200,
-                max_depth=15,
-                min_samples_leaf=5,
+                n_estimators=500,
+                max_depth=None,       # let trees grow fully
+                min_samples_leaf=2,
+                min_samples_split=4,
                 random_state=self.random_state,
                 n_jobs=-1,
             ),
+            "ExtraTrees": ExtraTreesClassifier(
+                n_estimators=500,
+                max_depth=None,
+                min_samples_leaf=2,
+                random_state=self.random_state,
+                n_jobs=-1,
+            ),
+            "GradBoost": GradientBoostingClassifier(
+                n_estimators=300,
+                max_depth=6,
+                learning_rate=0.05,
+                subsample=0.8,
+                random_state=self.random_state,
+            ),
             "MLP": MLPClassifier(
-                hidden_layer_sizes=(128, 64),
+                hidden_layer_sizes=(256, 128, 64),
                 activation='relu',
-                max_iter=500,
+                max_iter=1000,
                 early_stopping=True,
                 validation_fraction=0.1,
                 random_state=self.random_state,

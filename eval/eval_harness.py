@@ -43,7 +43,7 @@ class EvalConfig:
     episode_steps: int        = 1000
     seeds: list[int]          = field(default_factory=lambda: [42, 123, 456, 789, 1024])
     initial_cash: float       = 10_000.0
-    dataset_n_ticks: int       = 5000
+    dataset_n_ticks: int       = 20_000
     dqn_n_steps: int          = 20_000      # training steps (keep small for CI/demo)
     dqn_eval_every: int       = 5_000
     output_dir: Path           = Path("outputs")

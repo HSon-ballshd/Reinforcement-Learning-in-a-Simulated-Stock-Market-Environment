@@ -92,8 +92,8 @@ class TestRegimeClassifierPipelineRun:
         result = pipe.run()
         assert set(result.keys()) == {"val_scores", "test_scores", "best_name"}
         # val_scores has one entry per model
-        assert set(result["val_scores"].keys()) == {"LogReg", "RandomForest", "MLP"}
-        assert set(result["test_scores"].keys()) == {"LogReg", "RandomForest", "MLP"}
+        assert set(result["val_scores"].keys()) == {"LogReg", "RandomForest", "ExtraTrees", "GradBoost", "MLP"}
+        assert set(result["test_scores"].keys()) == {"LogReg", "RandomForest", "ExtraTrees", "GradBoost", "MLP"}
         for acc in list(result["val_scores"].values()) + list(result["test_scores"].values()):
             assert 0.0 <= acc <= 1.0
 
@@ -103,7 +103,7 @@ class TestRegimeClassifierPipelineRun:
             out_dir=tmp_path / "models",
         )
         result = pipe.run()
-        assert pipe.best_name in {"LogReg", "RandomForest", "MLP"}
+        assert pipe.best_name in {"LogReg", "RandomForest", "ExtraTrees", "GradBoost", "MLP"}
         assert pipe.best_model is not None
         assert pipe.best_name == result["best_name"]
         assert pipe.best_name == max(pipe.val_scores, key=pipe.val_scores.get)
