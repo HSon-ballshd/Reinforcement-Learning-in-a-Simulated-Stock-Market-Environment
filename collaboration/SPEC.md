@@ -34,7 +34,7 @@ Build a Python port of the Cookie Clicker stock market (see
 
 - Python 3.11+
 - NumPy / Pandas for the simulator
-- scikit-learn for the regime classifier (LogReg, RandomForest, MLP)
+- scikit-learn for the regime classifier (LogReg, RandomForest, ExtraTrees, GradientBoosting, MLP)
 - **PyTorch** for the DQN
 - Matplotlib for plots
 - pytest for tests

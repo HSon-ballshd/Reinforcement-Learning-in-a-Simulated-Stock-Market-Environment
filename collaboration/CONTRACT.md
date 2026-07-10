@@ -1,4 +1,4 @@
-# CONTRACT — Interface between Sim and Eval
+# CONTRACT -- Interface between Sim and Eval (v2)
 
 This is the binding interface between the simulator (`sim/`) and the rest of the
 system (`eval/`). **Both roles must conform exactly.** Lead approves changes.
@@ -83,7 +83,7 @@ Shape: `(n_stocks, 8)` when `reveal=False`, `(n_stocks, 14)` when `reveal=True`.
 
 ```python
 def generate_regime_dataset(
-    n_ticks: int = 5000,
+    n_ticks: int = 20000,
     n_stocks: int = 1,
     seed: int = 0,
     out_path: str | "Path" = "data/regime_dataset.parquet",
@@ -91,11 +91,18 @@ def generate_regime_dataset(
     """Run the simulator for n_ticks and dump (X, y) pairs."""
 ```
 
-Output format: a single parquet file with columns:
+Output format: a single parquet file with 18 feature columns + mode label:
 
 ```
-[tick, stock_id, price, return_1, return_5, return_20,
- rolling_mean_5, rolling_mean_20, rolling_std_20, momentum_5_20,
+[tick, stock_id, price,
+ return_1, return_5, return_10, return_20,
+ rolling_std_5, rolling_std_20, rolling_std_ratio,
+ mean_reversion_z,
+ directional_consistency_5, directional_consistency_20,
+ drift_estimate_5,
+ jump_count_5, jump_count_20, max_tick_return_5,
+ trend_strength_5, trend_strength_20,
+ momentum_divergence, vol_regime_5,
  mode]            # mode is the label y
 ```
 
