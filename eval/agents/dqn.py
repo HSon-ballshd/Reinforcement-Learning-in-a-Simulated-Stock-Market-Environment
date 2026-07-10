@@ -263,11 +263,14 @@ def train_dqn(
     max_episode_steps: int | None = None,
     eval_steps: int = 1000,
     initial_cash: float = 10_000.0,
+    train_seeds: list[int] | None = None,
 ) -> dict:
     """
     Run DQN training against the Cookie Clicker market.
 
-    Returns a dict with training logs and final eval metrics.
+    Args:
+        train_seeds: seeds to use for eval during training (must NOT include
+                     the training seed to avoid leakage).
     """
     from sim.market_sim import CookieClickerMarket
     from eval.env.trading_env import TradingEnv
@@ -292,6 +295,11 @@ def train_dqn(
     agent.reset()
     obs = env.reset()
 
+    # Default eval pool — exclude training seed
+    eval_seed_pool = [42, 123, 456, 789, 1024]
+    if train_seeds:
+        eval_seed_pool = [s for s in eval_seed_pool if s not in train_seeds]
+
     for step in range(n_steps):
         # Select and execute action
         action = agent._epsilon_greedy(obs, training=True)
@@ -315,9 +323,9 @@ def train_dqn(
             agent.reset()
             obs = env.reset()
 
-        # Periodic evaluation
+        # Periodic evaluation on held-out seeds
         if (step + 1) % eval_every == 0:
-            returns = _eval_agent(agent, market_seed + 9999, eval_steps, initial_cash)
+            returns = _eval_agent(agent, eval_seed_pool[:3], eval_steps, initial_cash)
             mean_ret = float(np.mean(returns))
             logs["eval_returns"].append(mean_ret)
             if mean_ret > best_eval:
@@ -332,16 +340,19 @@ def train_dqn(
 
 def _eval_agent(
     agent: DQNAgent,
-    market_seed: int,
+    seeds: list[int],
     n_steps: int,
     initial_cash: float,
 ) -> list[float]:
-    """Run agent greedily (no exploration) and return per-episode returns."""
+    """Run agent greedily (no exploration) and return portfolio return %.
+
+    Uses actual final portfolio value for a fair comparison with baselines.
+    """
     from sim.market_sim import CookieClickerMarket
     from eval.env.trading_env import TradingEnv
 
     returns = []
-    for seed in [market_seed + i for i in range(5)]:
+    for seed in seeds:
         market = CookieClickerMarket(n_stocks=1, seed=seed)
         env    = TradingEnv(
             market,
@@ -351,11 +362,12 @@ def _eval_agent(
         )
         agent.reset()
         obs = env.reset()
-        total_return = 0.0
         done = False
         while not done:
-            action = agent.select_action(obs, {})   # greedy (no epsilon)
-            obs, reward, done, _ = env.step(action)
-            total_return += reward
-        returns.append(total_return * 100.0)   # convert to %
+            action = agent.select_action(obs, {})
+            obs, _, done, _ = env.step(action)
+        # Compute actual portfolio return %
+        final_value   = env._portfolio_value()
+        total_return  = (final_value - initial_cash) / initial_cash * 100.0
+        returns.append(total_return)
     return returns

@@ -140,30 +140,16 @@ def run_h1(config: EvalConfig) -> dict:
             max_episode_steps=config.episode_steps,
             eval_steps=500,
             initial_cash=config.initial_cash,
+            train_seeds=train_seeds,
         )
         dqn.save("models/dqn_agent.pkl")
         print(f"    DQN training done. Best eval return: {train_result['best_eval']:.2f}%")
 
     # Evaluate DQN on held-out eval_seeds only
     print(f"  Evaluating DQN on held-out seeds {eval_seeds}...")
-    dqn_returns = []
-    for seed in eval_seeds:
-        market = CookieClickerMarket(n_stocks=1, seed=seed)
-        env    = TradingEnv(
-            market,
-            initial_cash=config.initial_cash,
-            max_steps=config.episode_steps,
-            seed=seed,
-        )
-        dqn.reset()
-        obs = env.reset()
-        total_ret = 0.0
-        done = False
-        while not done:
-            action = dqn.select_action(obs, {})
-            obs, reward, done, _ = env.step(action)
-            total_ret += reward
-        dqn_returns.append(total_ret * 100.0)
+    from eval.agents.dqn import _eval_agent as dqn_eval
+    dqn_returns = dqn_eval(dqn, eval_seeds, config.episode_steps, config.initial_cash)
+    # _eval_agent returns portfolio return % (final_value / initial_cash)
 
     results["DQN"] = {
         "mean_return": float(np.mean(dqn_returns)),
@@ -243,8 +229,13 @@ def run_h3(config: EvalConfig) -> dict:
     scaler = pickle.load(open(scaler_path, "rb"))
 
     def classify(obs: np.ndarray) -> int:
-        """Wrap scaler + classifier for RegimeAwareDQNAgent."""
-        x = scaler.transform(obs.reshape(1, -1))
+        """Wrap scaler + classifier for RegimeAwareDQNAgent.
+
+        TradingEnv returns 8 features: [price, return_1, ..., momentum_5_20].
+        The scaler/classifier were trained on 7 features (price excluded),
+        so we slice to obs[1:] to match FEATURE_COLS.
+        """
+        x = scaler.transform(obs[1:].reshape(1, -1))
         return int(clf.predict(x)[0])
 
     def _eval_agent(agent, seeds):
