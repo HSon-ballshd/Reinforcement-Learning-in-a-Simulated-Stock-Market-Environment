@@ -132,6 +132,10 @@ class RegimeAwareDQNAgent:
         """
         self._classifier_fn = classifier_fn
 
+    def set_env(self, env) -> None:
+        """Store reference to the current TradingEnv for feature extraction."""
+        self._env = env
+
     # ------------------------------------------------------------------
     # BaseAgent-like interface
     # ------------------------------------------------------------------

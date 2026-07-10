@@ -240,15 +240,6 @@ def run_h3(config: EvalConfig) -> dict:
     clf   = pickle.load(open(clf_path, "rb"))
     scaler = pickle.load(open(scaler_path, "rb"))
 
-    def classify(obs: np.ndarray) -> int:
-        """Wrap scaler + classifier for RegimeAwareDQNAgent.
-
-        TradingEnv returns 8 features: [price, return_1, ..., momentum_5_20].
-        The scaler/classifier were trained on 7 features (price excluded),
-        so we slice to obs[1:] to match FEATURE_COLS.
-        """
-        x = scaler.transform(obs[1:].reshape(1, -1))
-        return int(clf.predict(x)[0])
 
     def _eval_agent(agent, seeds):
         returns = []
@@ -310,11 +301,33 @@ def run_h3(config: EvalConfig) -> dict:
     print(f"    DQN: {np.mean(dqn_returns):.2f}% ± {np.std(dqn_returns):.2f}%")
 
     # --- Regime-aware DQN ---
+    # classify closure: uses clf/scaler (from outer scope) and agent._env (set at call time)
+    def make_classify_fn(agent, clf, scaler):
+        def classify(obs: np.ndarray) -> int:
+            """Classify regime using scaler + clf on 13 features."""
+            env = agent._env
+            stock = env.market.stocks[0]
+            vals  = stock['vals']
+            return_1   = (vals[0] - vals[1]) / vals[1] if len(vals) > 1 else 0.0
+            return_5   = (vals[0] - vals[4]) / vals[4] if len(vals) > 4 else 0.0
+            return_20  = (vals[0] - vals[19]) / vals[19] if len(vals) > 19 else 0.0
+            mean_5     = float(np.mean(vals[:5]))  if len(vals) >= 5  else float(np.mean(vals))
+            mean_20    = float(np.mean(vals[:20])) if len(vals) >= 20 else float(np.mean(vals))
+            std_20     = float(np.std(vals[:20]))  if len(vals) >= 20 else float(np.std(vals))
+            momentum   = return_5 - return_20
+            base = np.array([return_1, return_5, return_20,
+                             mean_5, mean_20, std_20, momentum], dtype=np.float32)
+            extended = env._get_extended_features()
+            x = np.concatenate([base, extended]).reshape(1, -1)
+            x = scaler.transform(x)
+            return int(clf.predict(x)[0])
+        return classify
+
     ra_dqn_ckpt = Path("models/ra_dqn_agent.pkl")
     if ra_dqn_ckpt.exists():
         print("  Loading trained regime-aware DQN...")
         ra_dqn = RegimeAwareDQNAgent.load(ra_dqn_ckpt)
-        ra_dqn.set_classifier(classify)
+        ra_dqn.set_classifier(make_classify_fn(ra_dqn, clf, scaler))
     else:
         print(f"  Training regime-aware DQN for {config.dqn_n_steps} steps on seed={train_seeds[0]}...")
         ra_dqn = RegimeAwareDQNAgent(
@@ -322,7 +335,7 @@ def run_h3(config: EvalConfig) -> dict:
             min_replay_size=500, batch_size=32,
             seed=train_seeds[0],
         )
-        ra_dqn.set_classifier(classify)
+        ra_dqn.set_classifier(make_classify_fn(ra_dqn, clf, scaler))
         ra_train_result = _train_ra(
             ra_dqn,
             market_seed=train_seeds[0],
@@ -409,6 +422,7 @@ def _train_ra(
         max_steps=max_episode_steps,
         seed=market_seed,
     )
+    agent.set_env(env)
 
     episode_return = 0.0
     agent.reset()
@@ -426,11 +440,9 @@ def _train_ra(
         next_obs, reward, done, info = env.step(action)
         episode_return += reward
 
-        # Infer regime once per step — pass to store so it's cached in the transition
-        curr_regime  = agent._infer_regime(obs)
-        next_regime_ = agent._infer_regime(next_obs)
-        agent.store(obs, action, reward, next_obs, done,
-                    regime=curr_regime, next_regime=next_regime_)
+        # store() with no regime args → infers internally via _infer_regime,
+        # which calls the injected classifier closure (uses agent._env for features)
+        agent.store(obs, action, reward, next_obs, done)
         obs = next_obs
 
         loss = agent.train_step()

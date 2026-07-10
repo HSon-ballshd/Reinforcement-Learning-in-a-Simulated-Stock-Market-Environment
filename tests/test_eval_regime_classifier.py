@@ -26,7 +26,7 @@ from eval.classifiers.regime_classifier import (
 def small_dataset(tmp_path):
     """
     Create a tiny synthetic parquet file:
-    500 rows, 6 regimes, 7 features + mode column.
+    500 rows, 6 regimes, 13 features + mode column.
     """
     n = 500
     rng = np.random.default_rng(0)
@@ -39,6 +39,12 @@ def small_dataset(tmp_path):
         'rolling_mean_20': rng.uniform(5, 20, n),
         'rolling_std_20': rng.uniform(0.1, 5, n),
         'momentum_5_20': rng.standard_normal(n),
+        'drift_proxy': rng.standard_normal(n),
+        'vol_ratio': rng.uniform(0.1, 3, n),
+        'mean_reversion_signal': rng.standard_normal(n),
+        'directional_consistency': rng.uniform(0, 1, n),
+        'sharpe_proxy': rng.standard_normal(n),
+        'momentum_divergence': rng.integers(0, 2, n),
         'mode':          rng.integers(0, 6, n),
     }
     df = pd.DataFrame(data)
