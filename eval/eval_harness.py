@@ -426,7 +426,11 @@ def _train_ra(
         next_obs, reward, done, info = env.step(action)
         episode_return += reward
 
-        agent.store(obs, action, reward, next_obs, done)
+        # Infer regime once per step — pass to store so it's cached in the transition
+        curr_regime  = agent._infer_regime(obs)
+        next_regime_ = agent._infer_regime(next_obs)
+        agent.store(obs, action, reward, next_obs, done,
+                    regime=curr_regime, next_regime=next_regime_)
         obs = next_obs
 
         loss = agent.train_step()

@@ -25,7 +25,7 @@ from typing import Optional
 
 from eval.agents.dqn import QNetwork, ReplayBuffer
 
-Transition = namedtuple("Transition", ["obs", "regime", "action", "reward", "next_obs", "done"])
+Transition = namedtuple("Transition", ["obs", "regime", "action", "reward", "next_obs", "next_regime", "done"])
 
 
 class RegimeAwareQNetwork(nn.Module):
@@ -53,8 +53,8 @@ class RegimeAwareQNetwork(nn.Module):
 class RegimeAwareReplayBuffer(ReplayBuffer):
     """Replay buffer that stores regime alongside transitions."""
 
-    def push(self, obs, regime: int, action, reward, next_obs, done) -> None:
-        self.buffer.append(Transition(obs, regime, action, reward, next_obs, done))
+    def push(self, obs, regime: int, action, reward, next_obs, next_regime: int, done) -> None:
+        self.buffer.append(Transition(obs, regime, action, reward, next_obs, next_regime, done))
 
 
 class RegimeAwareDQNAgent:
@@ -182,10 +182,12 @@ class RegimeAwareDQNAgent:
     # ------------------------------------------------------------------
     # Store and train
     # ------------------------------------------------------------------
-    def store(self, obs, action, reward, next_obs, done, regime: int | None = None) -> None:
+    def store(self, obs, action, reward, next_obs, done, regime: int | None = None, next_regime: int | None = None) -> None:
         if regime is None:
             regime = self._infer_regime(obs)
-        self.replay.push(obs, regime, action, reward, next_obs, done)
+        if next_regime is None:
+            next_regime = self._infer_regime(next_obs)
+        self.replay.push(obs, regime, action, reward, next_obs, next_regime, done)
 
     def train_step(self) -> Optional[float]:
         if len(self.replay) < self.min_replay_size:
@@ -210,9 +212,8 @@ class RegimeAwareDQNAgent:
             return self._to_tensor(states)
 
         state_batch     = state_from_batch(obs_batch, regime_batch)
-        next_regimes    = np.array(
-            [self._infer_regime(t.next_obs) for t in batch], dtype=np.int64)
-        next_state_batch = state_from_batch(next_obs_batch, next_regimes)
+        next_regimes_stored = np.array([t.next_regime for t in batch], dtype=np.int64)
+        next_state_batch = state_from_batch(next_obs_batch, next_regimes_stored)
 
         # Q(s, a)
         q_values = self.q_net(state_batch).gather(dim=1, index=action_batch)

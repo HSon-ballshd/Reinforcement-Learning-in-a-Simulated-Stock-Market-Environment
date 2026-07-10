@@ -30,7 +30,7 @@ class TestRegimeAwareQNetwork:
 class TestRegimeAwareReplayBuffer:
     def test_stores_regime(self):
         buf = RegimeAwareReplayBuffer(capacity=10)
-        buf.push(np.zeros(8), 3, 1, 0.5, np.ones(8), False)
+        buf.push(np.zeros(8), 3, 1, 0.5, np.ones(8), 2, False)
         t = buf.buffer[0]
         assert t.regime == 3
         assert t.action == 1
@@ -101,8 +101,9 @@ class TestRegimeAwareDQNAgentTrain:
     def test_store_and_retrieve_regime(self):
         agent = RegimeAwareDQNAgent(seed=0, min_replay_size=1)
         obs = np.zeros(8, dtype=np.float32)
-        agent.store(obs, 1, 0.1, obs, False, regime=2)
+        agent.store(obs, 1, 0.1, obs, False, regime=2, next_regime=3)
         assert agent.replay.buffer[0].regime == 2
+        assert agent.replay.buffer[0].next_regime == 3
 
     def test_train_step_returns_loss(self):
         agent = RegimeAwareDQNAgent(
@@ -114,6 +115,7 @@ class TestRegimeAwareDQNAgentTrain:
                 np.random.randn(8).astype(np.float32),
                 False,
                 regime=3,
+                next_regime=4,
             )
         loss = agent.train_step()
         assert loss is not None
