@@ -21,6 +21,7 @@ from dataclasses import dataclass, field, asdict
 # Project imports
 from eval.visualization import plot_training_run, plot_h3_comparison
 from sim.market_sim import CookieClickerMarket
+from tqdm import tqdm
 from sim.market_sim.dataset import generate_regime_dataset
 from eval.env.trading_env import TradingEnv
 from eval.agents.baselines import (
@@ -420,18 +421,9 @@ def _train_ra(
     if train_seeds:
         eval_seed_pool = [s for s in eval_seed_pool if s not in train_seeds]
 
-    for step in range(n_steps):
-        # Verbose progress line every 1% of training
-        if verbose and n_steps >= 1000 and (step + 1) % max(1, n_steps // 100) == 0:
-            loss_str = f"{logs['loss'][-1]:.4f}" if logs["loss"] else "—"
-            pct = (step + 1) / n_steps * 100
-            print(
-                f"\r  [{step + 1:>6}/{n_steps} ({pct:>5.1f}%)] "
-                f"ε={agent.epsilon:.3f}  loss={loss_str}",
-                end="",
-                flush=True,
-                file=sys.stdout,
-            )
+    iterator = tqdm(range(n_steps), desc="RA-DQN", unit="step", disable=not verbose)
+
+    for step in iterator:
         action    = agent._epsilon_greedy(obs, training=True)
         next_obs, reward, done, info = env.step(action)
         episode_return += reward
@@ -471,9 +463,7 @@ def _train_ra(
             logs["eval_returns"].append(mean_ev)
             if mean_ev > best_eval:
                 best_eval = mean_ev
-
-    if verbose:
-        print()  # end the progress line
+            iterator.set_postfix(epsilon=f"{agent.epsilon:.3f}", eval_ret=f"{mean_ev:.2f}%")
 
     return {"logs": logs, "best_eval": float(best_eval)}
 

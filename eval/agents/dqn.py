@@ -17,8 +17,8 @@ reinforcement learning" with:
 from __future__ import annotations
 
 import pickle
-import sys
 import numpy as np
+from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -302,7 +302,9 @@ def train_dqn(
     if train_seeds:
         eval_seed_pool = [s for s in eval_seed_pool if s not in train_seeds]
 
-    for step in range(n_steps):
+    iterator = tqdm(range(n_steps), desc="DQN", unit="step", disable=not verbose)
+
+    for step in iterator:
         # Select and execute action
         action = agent._epsilon_greedy(obs, training=True)
         next_obs, reward, done, info = env.step(action)
@@ -325,18 +327,6 @@ def train_dqn(
             agent.reset()
             obs = env.reset()
 
-        # Verbose progress line every 1% of training
-        if verbose and n_steps >= 1000 and (step + 1) % max(1, n_steps // 100) == 0:
-            loss_str = f"{loss:.4f}" if loss is not None else "—"
-            pct = (step + 1) / n_steps * 100
-            print(
-                f"\r  [{step + 1:>6}/{n_steps} ({pct:>5.1f}%)] "
-                f"ε={agent.epsilon:.3f}  loss={loss_str}",
-                end="",
-                flush=True,
-                file=sys.stdout,
-            )
-
         # Periodic evaluation on held-out seeds
         if (step + 1) % eval_every == 0:
             returns = _eval_agent(agent, eval_seed_pool[:3], eval_steps, initial_cash)
@@ -344,9 +334,7 @@ def train_dqn(
             logs["eval_returns"].append(mean_ret)
             if mean_ret > best_eval:
                 best_eval = mean_ret
-
-    if verbose:
-        print()  # end the progress line
+            iterator.set_postfix(epsilon=f"{agent.epsilon:.3f}", eval_ret=f"{mean_ret:.2f}%")
 
     return {
         "logs":      logs,
