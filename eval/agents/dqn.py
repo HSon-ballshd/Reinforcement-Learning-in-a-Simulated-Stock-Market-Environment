@@ -17,6 +17,7 @@ reinforcement learning" with:
 from __future__ import annotations
 
 import pickle
+import sys
 import numpy as np
 import torch
 import torch.nn as nn
@@ -264,6 +265,7 @@ def train_dqn(
     eval_steps: int = 1000,
     initial_cash: float = 10_000.0,
     train_seeds: list[int] | None = None,
+    verbose: bool = True,
 ) -> dict:
     """
     Run DQN training against the Cookie Clicker market.
@@ -323,6 +325,18 @@ def train_dqn(
             agent.reset()
             obs = env.reset()
 
+        # Verbose progress line every 1% of training
+        if verbose and n_steps >= 1000 and (step + 1) % max(1, n_steps // 100) == 0:
+            loss_str = f"{loss:.4f}" if loss is not None else "—"
+            pct = (step + 1) / n_steps * 100
+            print(
+                f"\r  [{step + 1:>6}/{n_steps} ({pct:>5.1f}%)] "
+                f"ε={agent.epsilon:.3f}  loss={loss_str}",
+                end="",
+                flush=True,
+                file=sys.stdout,
+            )
+
         # Periodic evaluation on held-out seeds
         if (step + 1) % eval_every == 0:
             returns = _eval_agent(agent, eval_seed_pool[:3], eval_steps, initial_cash)
@@ -330,6 +344,9 @@ def train_dqn(
             logs["eval_returns"].append(mean_ret)
             if mean_ret > best_eval:
                 best_eval = mean_ret
+
+    if verbose:
+        print()  # end the progress line
 
     return {
         "logs":      logs,

@@ -19,6 +19,7 @@ from datetime import datetime
 from dataclasses import dataclass, field, asdict
 
 # Project imports
+from eval.visualization import plot_training_run, plot_h3_comparison
 from sim.market_sim import CookieClickerMarket
 from sim.market_sim.dataset import generate_regime_dataset
 from eval.env.trading_env import TradingEnv
@@ -144,6 +145,16 @@ def run_h1(config: EvalConfig) -> dict:
         )
         dqn.save("models/dqn_agent.pkl")
         print(f"    DQN training done. Best eval return: {train_result['best_eval']:.2f}%")
+
+        # Plot training progress
+        plot_path = config.output_dir / "h1_dqn_training.png"
+        plot_training_run(
+            logs=train_result["logs"],
+            title="H1 — DQN Training Progress",
+            output_path=plot_path,
+            eval_every=config.dqn_eval_every,
+            total_steps=config.dqn_n_steps,
+        )
 
     # Evaluate DQN on held-out eval_seeds only
     print(f"  Evaluating DQN on held-out seeds {eval_seeds}...")
@@ -272,7 +283,7 @@ def run_h3(config: EvalConfig) -> dict:
             seed=train_seeds[0],
         )
         from eval.agents.dqn import train_dqn
-        train_dqn(
+        dqn_train_result = train_dqn(
             dqn,
             market_seed=train_seeds[0],
             n_steps=config.dqn_n_steps,
@@ -280,8 +291,18 @@ def run_h3(config: EvalConfig) -> dict:
             max_episode_steps=config.episode_steps,
             eval_steps=500,
             initial_cash=config.initial_cash,
+            verbose=False,   # verbose output already emitted inside train_dqn
         )
         dqn.save("models/dqn_agent.pkl")
+
+        plot_path = config.output_dir / "h3_dqn_training.png"
+        plot_training_run(
+            logs=dqn_train_result["logs"],
+            title="H3 — Plain DQN Training Progress",
+            output_path=plot_path,
+            eval_every=config.dqn_eval_every,
+            total_steps=config.dqn_n_steps,
+        )
 
     print(f"  Evaluating plain DQN on seeds {eval_seeds}...")
     dqn_returns = _eval_agent(dqn, eval_seeds)
@@ -301,7 +322,7 @@ def run_h3(config: EvalConfig) -> dict:
             seed=train_seeds[0],
         )
         ra_dqn.set_classifier(classify)
-        _train_ra(
+        ra_train_result = _train_ra(
             ra_dqn,
             market_seed=train_seeds[0],
             n_steps=config.dqn_n_steps,
@@ -310,8 +331,27 @@ def run_h3(config: EvalConfig) -> dict:
             eval_steps=500,
             initial_cash=config.initial_cash,
             train_seeds=train_seeds,
+            verbose=False,
         )
         ra_dqn.save("models/ra_dqn_agent.pkl")
+
+        plot_path = config.output_dir / "h3_ra_dqn_training.png"
+        plot_training_run(
+            logs=ra_train_result["logs"],
+            title="H3 — Regime-Aware DQN Training Progress",
+            output_path=plot_path,
+            eval_every=config.dqn_eval_every,
+            total_steps=config.dqn_n_steps,
+        )
+
+        # Overlay comparison plot
+        plot_h3_comparison(
+            dqn_logs=dqn_train_result["logs"],
+            ra_logs=ra_train_result["logs"],
+            output_path=config.output_dir / "h3_comparison.png",
+            eval_every=config.dqn_eval_every,
+            total_steps=config.dqn_n_steps,
+        )
 
     print(f"  Evaluating regime-aware DQN on seeds {eval_seeds}...")
     ra_returns = _eval_agent(ra_dqn, eval_seeds)
@@ -350,6 +390,7 @@ def _train_ra(
     eval_steps: int,
     initial_cash: float,
     train_seeds: list[int] | None = None,
+    verbose: bool = True,
 ) -> dict:
     """
     Train a regime-aware DQN agent.
@@ -358,7 +399,8 @@ def _train_ra(
         train_seeds: seeds to use for eval during training (must NOT include
                       the training seed to avoid leakage).
     """
-    logs = {"loss": [], "epsilon": []}
+    import sys
+    logs = {"loss": [], "epsilon": [], "episode_return": [], "eval_returns": []}
     best_eval = -np.inf
 
     market = CookieClickerMarket(n_stocks=1, seed=market_seed)
@@ -379,6 +421,17 @@ def _train_ra(
         eval_seed_pool = [s for s in eval_seed_pool if s not in train_seeds]
 
     for step in range(n_steps):
+        # Verbose progress line every 1% of training
+        if verbose and n_steps >= 1000 and (step + 1) % max(1, n_steps // 100) == 0:
+            loss_str = f"{logs['loss'][-1]:.4f}" if logs["loss"] else "—"
+            pct = (step + 1) / n_steps * 100
+            print(
+                f"\r  [{step + 1:>6}/{n_steps} ({pct:>5.1f}%)] "
+                f"ε={agent.epsilon:.3f}  loss={loss_str}",
+                end="",
+                flush=True,
+                file=sys.stdout,
+            )
         action    = agent._epsilon_greedy(obs, training=True)
         next_obs, reward, done, info = env.step(action)
         episode_return += reward
@@ -393,6 +446,8 @@ def _train_ra(
         logs["epsilon"].append(agent.epsilon)
 
         if done:
+            logs["episode_return"].append(float(episode_return))
+            episode_return = 0.0
             env.reset()
             agent.reset()
             obs = env.reset()
@@ -413,8 +468,12 @@ def _train_ra(
                     ret += r
                 ev_returns.append(ret * 100.0)
             mean_ev = float(np.mean(ev_returns))
+            logs["eval_returns"].append(mean_ev)
             if mean_ev > best_eval:
                 best_eval = mean_ev
+
+    if verbose:
+        print()  # end the progress line
 
     return {"logs": logs, "best_eval": float(best_eval)}
 
