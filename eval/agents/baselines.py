@@ -156,6 +156,10 @@ def evaluate_agent(
     obs   = env.reset()
     agent.reset()
 
+    # Allow agents that need env access (e.g. RegimeAwareDQNAgent) to reach it
+    if hasattr(agent, '_env') or hasattr(agent, 'set_env'):
+        agent._env = env
+
     n_buys = n_sells = n_holds = 0
 
     for _ in range(n_steps):
@@ -201,7 +205,7 @@ def compare_baselines(
     agents = {
         'Random':          RandomAgent(),
         'BuyAndHold':      BuyAndHoldAgent(),
-        'MeanReversion':   MeanReversionAgent(threshold=0.01),
+        'MeanReversion':   MeanReversionAgent(threshold=0.05),
     }
 
     results = {name: [] for name in agents}

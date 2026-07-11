@@ -17,13 +17,25 @@ Build a Python port of the Cookie Clicker stock market (see
 ## Hypotheses to test
 
 - **H1** — DQN beats Random and Buy-and-Hold on return.
-- **H2** — Regime classifier beats random guessing (1/6 ≈ 16.7%) by a meaningful
+- **H2** — Regime classifier beats random guessing (1/4 = 25.0%) by a meaningful
   margin.
 - **H3** — DQN + regime beats plain DQN. **This is the academic contribution.**
 
+## Evaluation parameters
+
+- **Episode length:** 500 ticks (1000 ticks caused ~15M% compounded returns; 500 → ~1100%)
+- **Train seeds:** [42, 123, 456] — one DQN trained per seed
+- **Eval seeds:** [789, 1024, 2048, 4096, 8192] — each trained agent evaluated on all 5
+- **Total evaluation runs:** 15 per agent type (3 agents × 5 eval seeds)
+- **Checkpoint files:** `models/dqn_agent_{seed}.pkl`, `models/ra_dqn_agent_{seed}.pkl`
+- **Training logs:** `outputs/{exp}_seed{seed}_log.csv` (incremental, crash-proof)
+- **Plots:** `outputs/{exp}_seed{seed}.png`, `outputs/h3_comparison.png`
+- **Baseline MeanReversion threshold:** 5% (was 1% — never triggered trades before)
+
 ## Environment
 
-- Six hidden regimes: Stable, Bullish, Bearish, Strong Bull, Strong Bear, Chaotic.
+- Four hidden macro-regimes: Stable, Bull (Bullish+Strong Bull merged), Bear (Bearish+Strong Bear merged), Chaotic.
+  The underlying simulator still has 6 modes internally; labels are the 4 macro-regimes.
 - Regime is not observable to any trading agent.
 - Simulator exposes the regime only when `reveal=True` (used for dataset generation
   and Exp 2/3 evaluation).

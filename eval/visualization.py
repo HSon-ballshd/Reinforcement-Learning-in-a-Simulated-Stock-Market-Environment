@@ -119,7 +119,7 @@ def plot_training_run(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
-    print(f"  Saved plot → {output_path}")
+    print(f"  Saved plot -> {output_path}")
 
 
 def _rolling_mean(arr: list[float], window: int) -> np.ndarray:

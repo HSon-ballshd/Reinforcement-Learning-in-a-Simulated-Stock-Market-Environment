@@ -11,9 +11,9 @@ Before starting any work, also read STATUS.md so you don't duplicate effort.
 | File | What it is | When to read |
 |---|---|---|
 | [PROTOCOL.md](PROTOCOL.md) | Rules of engagement. Roles, ownership, handoffs, conflict resolution. | **Always, first.** |
-| [SPEC.md](SPEC.md) | Restated, agent-facing version of the project spec (objectives, hypotheses, scope). | After PROTOCOL.md. |
+| [SPEC.md](SPEC.md) | Restated, agent-facing version of the project spec (objectives, hypotheses, evaluation parameters, scope). | After PROTOCOL.md. |
 | [CONTRACT.md](CONTRACT.md) | Interface contract. Exact file paths, function signatures, and data formats each module must expose. | Before writing or modifying any code. |
-| [STATUS.md](STATUS.md) | Live status board. Who's working on what, in-progress, blocked, decisions log. | Before starting work; update when you finish or block. |
+| [STATUS.md](STATUS.md) | Live status board. Who's working on what, in-progress, blocked, decisions log, results summary. | Before starting work; update when you finish or block. |
 
 ## Folder ownership (exclusive)
 

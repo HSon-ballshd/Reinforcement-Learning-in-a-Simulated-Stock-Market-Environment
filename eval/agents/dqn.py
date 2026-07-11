@@ -17,6 +17,7 @@ reinforcement learning" with:
 from __future__ import annotations
 
 import pickle
+import csv
 import numpy as np
 from tqdm import tqdm
 import torch
@@ -117,9 +118,20 @@ class DQNAgent:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device)
 
-        # RNG
-        self._rng   = np.random.default_rng(seed)
-        self._torch_rng = torch.manual_seed(seed) if seed is not None else None
+        # Save seed for reproducibility
+        self.seed = seed
+
+        # Force deterministic on GPU (cuDNN can be non-deterministic)
+        if self.device.type == "cuda":
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+
+        # RNG — save/restore RNG state in save/load for full reproducibility
+        self._rng = np.random.default_rng(seed)
+        if seed is not None:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(seed)
 
         # Networks
         self.q_net      = QNetwork(obs_dim, self.hidden_dims, n_actions).to(self.device)
@@ -225,14 +237,18 @@ class DQNAgent:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         state = {
-            "q_net_state":     self.q_net.state_dict(),
-            "target_net_state": self.target_net.state_dict(),
+            "q_net_state":      self.q_net.state_dict(),
+            "target_net_state":  self.target_net.state_dict(),
             "optimizer_state":  self.optimizer.state_dict(),
-            "epsilon":          self.epsilon,
+            "epsilon":           self.epsilon,
             "global_step":      self.global_step,
             "obs_dim":          self.obs_dim,
             "n_actions":        self.n_actions,
             "hidden_dims":      self.hidden_dims,
+            "seed":             self.seed,
+            "rng_state":        self._rng.bit_generator.state,
+            "torch_rng_state":  torch.get_rng_state(),
+            "cuda_rng_state":   torch.cuda.get_rng_state() if self.device.type == "cuda" else None,
         }
         pickle.dump(state, open(path, "wb"))
 
@@ -244,12 +260,18 @@ class DQNAgent:
             n_actions=state["n_actions"],
             hidden_dims=state["hidden_dims"],
             device=device,
+            seed=state["seed"],
         )
         agent.q_net.load_state_dict(state["q_net_state"])
         agent.target_net.load_state_dict(state["target_net_state"])
         agent.optimizer.load_state_dict(state["optimizer_state"])
         agent.epsilon     = state["epsilon"]
         agent.global_step = state["global_step"]
+        # Restore RNG state for deterministic replay
+        agent._rng.bit_generator.state = state["rng_state"]
+        torch.set_rng_state(state["torch_rng_state"])
+        if state["cuda_rng_state"] is not None:
+            torch.cuda.set_rng_state(state["cuda_rng_state"], device=agent.device)
         return agent
 
 
@@ -266,13 +288,18 @@ def train_dqn(
     initial_cash: float = 10_000.0,
     train_seeds: list[int] | None = None,
     verbose: bool = True,
+    log_path: str | Path | None = None,
 ) -> dict:
     """
     Run DQN training against the Cookie Clicker market.
 
+    Logs are written incrementally to a CSV file (one row per eval checkpoint)
+    so partial progress is preserved if training is interrupted.
+
     Args:
         train_seeds: seeds to use for eval during training (must NOT include
                      the training seed to avoid leakage).
+        log_path:    if provided, append eval checkpoints to this CSV file.
     """
     from sim.market_sim import CookieClickerMarket
     from eval.env.trading_env import TradingEnv
@@ -302,39 +329,65 @@ def train_dqn(
     if train_seeds:
         eval_seed_pool = [s for s in eval_seed_pool if s not in train_seeds]
 
+    # Open CSV log for incremental writes
+    csv_file = None
+    csv_writer = None
+    if log_path:
+        csv_file = open(log_path, "w", newline="")
+        csv_writer = csv.DictWriter(csv_file, fieldnames=["step", "loss", "epsilon", "episode_return", "eval_return_pct"])
+        csv_writer.writeheader()
+
     iterator = tqdm(range(n_steps), desc="DQN", unit="step", disable=not verbose)
 
-    for step in iterator:
-        # Select and execute action
-        action = agent._epsilon_greedy(obs, training=True)
-        next_obs, reward, done, info = env.step(action)
-        episode_return += reward
+    try:
+        for step in iterator:
+            # Select and execute action
+            action = agent._epsilon_greedy(obs, training=True)
+            next_obs, reward, done, info = env.step(action)
+            episode_return += reward
 
-        agent.store(obs, action, reward, next_obs, done)
-        obs = next_obs
+            agent.store(obs, action, reward, next_obs, done)
+            obs = next_obs
 
-        # Train
-        loss = agent.train_step()
-        if loss is not None:
-            logs["loss"].append(float(loss))
+            # Train
+            loss = agent.train_step()
+            if loss is not None:
+                logs["loss"].append(float(loss))
 
-        logs["epsilon"].append(agent.epsilon)
+            logs["epsilon"].append(agent.epsilon)
 
-        if done:
-            logs["episode_return"].append(float(episode_return))
-            episode_return = 0.0
-            env.reset()
-            agent.reset()
-            obs = env.reset()
+            if done:
+                logs["episode_return"].append(float(episode_return))
+                episode_return = 0.0
+                env.reset()
+                agent.reset()
+                obs = env.reset()
 
-        # Periodic evaluation on held-out seeds
-        if (step + 1) % eval_every == 0:
-            returns = _eval_agent(agent, eval_seed_pool[:3], eval_steps, initial_cash)
-            mean_ret = float(np.mean(returns))
-            logs["eval_returns"].append(mean_ret)
-            if mean_ret > best_eval:
-                best_eval = mean_ret
-            iterator.set_postfix(epsilon=f"{agent.epsilon:.3f}", eval_ret=f"{mean_ret:.2f}%")
+            # Periodic evaluation on held-out seeds
+            if (step + 1) % eval_every == 0:
+                returns = _eval_agent(agent, eval_seed_pool[:3], eval_steps, initial_cash)
+                mean_ret = float(np.mean(returns))
+                logs["eval_returns"].append(mean_ret)
+                if mean_ret > best_eval:
+                    best_eval = mean_ret
+                iterator.set_postfix(epsilon=f"{agent.epsilon:.3f}", eval_ret=f"{mean_ret:.2f}%")
+
+                # Incrementally write to CSV
+                if csv_writer is not None:
+                    last_loss = logs["loss"][-1] if logs["loss"] else ""
+                    last_ep  = logs["episode_return"][-1] if logs["episode_return"] else ""
+                    csv_writer.writerow({
+                        "step": step + 1,
+                        "loss": last_loss,
+                        "epsilon": agent.epsilon,
+                        "episode_return": last_ep,
+                        "eval_return_pct": mean_ret,
+                    })
+                    csv_file.flush()
+
+    finally:
+        if csv_file is not None:
+            csv_file.close()
 
     return {
         "logs":      logs,
@@ -366,6 +419,8 @@ def _eval_agent(
             seed=seed,
         )
         agent.reset()
+        if hasattr(agent, '_env') or hasattr(agent, 'set_env'):
+            agent._env = env
         obs = env.reset()
         done = False
         while not done:

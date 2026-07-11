@@ -14,9 +14,9 @@ from eval.agents.dqn_regime import (
 
 
 class TestRegimeAwareQNetwork:
-    def test_input_dim_is_obs_plus_6(self):
+    def test_input_dim_is_obs_plus_4(self):
         net = RegimeAwareQNetwork(obs_dim=8)
-        x   = torch.randn(4, 14)   # 8 obs + 6 one-hot
+        x   = torch.randn(4, 12)   # 8 obs + 4 one-hot
         out = net(x)
         assert out.shape == (4, 3)
 
@@ -44,9 +44,9 @@ class TestRegimeAwareDQNAgentInit:
         assert agent.epsilon    == 1.0
 
     def test_network_input_dim(self):
-        """Q-net should accept 14-dim input (8 obs + 6 regime)."""
+        """Q-net should accept 12-dim input (8 obs + 4 regime)."""
         agent = RegimeAwareDQNAgent(seed=0)
-        x = torch.randn(2, 14, device=agent.device)
+        x = torch.randn(2, 12, device=agent.device)
         with torch.no_grad():
             out = agent.q_net(x)
         assert out.shape == (2, 3)
@@ -67,7 +67,7 @@ class TestRegimeAwareDQNAgentClassifier:
     def test_regime_onehot_correct(self):
         agent = RegimeAwareDQNAgent()
         vec = agent._regime_onehot(2)
-        assert vec.shape == (6,)
+        assert vec.shape == (4,)
         assert vec[2] == 1.0
         assert vec.sum() == 1.0
 
@@ -75,8 +75,8 @@ class TestRegimeAwareDQNAgentClassifier:
         agent = RegimeAwareDQNAgent()
         obs = np.array([1.0] * 8, dtype=np.float32)
         state = agent._build_state(obs, 3)
-        assert state.shape == (14,)
-        assert state[8:14].argmax() == 3
+        assert state.shape == (12,)
+        assert state[8:12].argmax() == 3
 
 
 class TestRegimeAwareDQNAgentSelectAction:
@@ -115,7 +115,7 @@ class TestRegimeAwareDQNAgentTrain:
                 np.random.randn(8).astype(np.float32),
                 False,
                 regime=3,
-                next_regime=4,
+                next_regime=0,
             )
         loss = agent.train_step()
         assert loss is not None
@@ -131,7 +131,7 @@ class TestRegimeAwareDQNAgentSaveLoad:
         agent.save(ckpt)
 
         loaded = RegimeAwareDQNAgent.load(ckpt)
-        x = torch.randn(2, 14, device=loaded.device)
+        x = torch.randn(2, 12, device=loaded.device)
         with torch.no_grad():
             assert torch.allclose(agent.q_net(x), loaded.q_net(x))
 

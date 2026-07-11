@@ -2,7 +2,7 @@
 Evaluation harness — runs experiments H1, H2, H3 and produces results tables.
 
 H1: DQN beats Random and Buy-and-Hold on return.
-H2: Regime classifier beats random guessing (1/6 ≈ 16.7%).
+H2: Regime classifier beats random guessing (1/4 = 25.0%).
 H3: DQN + regime beats plain DQN.
 
 Usage:
@@ -10,6 +10,9 @@ Usage:
 """
 
 from __future__ import annotations
+
+import matplotlib
+matplotlib.use("Agg")   # non-interactive backend — avoids tkinter conflicts on Windows
 
 import json
 import pickle
@@ -19,7 +22,7 @@ from datetime import datetime
 from dataclasses import dataclass, field, asdict
 
 # Project imports
-from eval.visualization import plot_training_run, plot_h3_comparison
+from eval.visualization import plot_training_run
 from sim.market_sim import CookieClickerMarket
 from tqdm import tqdm
 from sim.market_sim.dataset import generate_regime_dataset
@@ -40,8 +43,8 @@ from eval.agents.dqn_regime import RegimeAwareDQNAgent
 @dataclass
 class EvalConfig:
     n_episodes: int           = 10
-    episode_steps: int        = 1000
-    seeds: list[int]          = field(default_factory=lambda: [42, 123, 456, 789, 1024])
+    episode_steps: int        = 500       # 1000 ticks → ~15M% compounded return; 500 → ~1100%
+    seeds: list[int]          = field(default_factory=lambda: [42, 123, 456, 789, 1024, 2048, 4096, 8192])
     initial_cash: float       = 10_000.0
     dataset_n_ticks: int       = 20_000
     dqn_n_steps: int          = 20_000      # training steps (keep small for CI/demo)
@@ -77,7 +80,7 @@ def run_h2(config: EvalConfig) -> dict:
     pipeline = RegimeClassifierPipeline(data_path=data_path, out_dir="models")
     result = pipeline.run()
 
-    baseline = 1.0 / 6
+    baseline = 1.0 / 4
 
     # Final reported score is test accuracy of the best model
     best_name  = result["best_name"]
@@ -111,67 +114,71 @@ def run_h1(config: EvalConfig) -> dict:
     """
     print("\n=== H1: Trading Return Comparison ===")
 
-    # Split into train seeds (first N-2) and eval seeds (last 2)
-    train_seeds = config.seeds[:-2]
-    eval_seeds  = config.seeds[-2:]
+    train_seeds = config.seeds[:-5]
+    eval_seeds  = config.seeds[-5:]
     print(f"  Train seeds: {train_seeds}")
     print(f"  Eval seeds:  {eval_seeds}")
 
     results = {}
+    from eval.agents.dqn import _eval_agent as dqn_eval, train_dqn
 
-    # Train DQN on train_seeds
-    dqn_ckpt = Path("models/dqn_agent.pkl")
-    if dqn_ckpt.exists():
-        print("  Loading trained DQN from models/dqn_agent.pkl ...")
-        dqn = DQNAgent.load(dqn_ckpt)
-    else:
-        print(f"  Training DQN for {config.dqn_n_steps} steps on seed={train_seeds[0]}...")
-        dqn = DQNAgent(
-            obs_dim=8,
-            n_actions=3,
-            min_replay_size=500,
-            batch_size=32,
-            seed=train_seeds[0],
-        )
-        from eval.agents.dqn import train_dqn
-        train_result = train_dqn(
-            dqn,
-            market_seed=train_seeds[0],
-            n_steps=config.dqn_n_steps,
-            eval_every=config.dqn_eval_every,
-            max_episode_steps=config.episode_steps,
-            eval_steps=500,
-            initial_cash=config.initial_cash,
-            train_seeds=train_seeds,
-        )
-        dqn.save("models/dqn_agent.pkl")
-        print(f"    DQN training done. Best eval return: {train_result['best_eval']:.2f}%")
+    # Train one DQN per seed; evaluate each on every eval seed
+    all_dqn_returns: list[float] = []
+    train_logs = None
 
-        # Plot training progress
+    for seed in train_seeds:
+        dqn_ckpt = Path(f"models/dqn_agent_{seed}.pkl")
+        if dqn_ckpt.exists():
+            print(f"  Loading trained DQN (seed={seed}) ...")
+            dqn = DQNAgent.load(dqn_ckpt)
+        else:
+            print(f"  Training DQN for {config.dqn_n_steps} steps on seed={seed}...")
+            dqn = DQNAgent(
+                obs_dim=8, n_actions=3,
+                min_replay_size=500, batch_size=32,
+                seed=seed,
+            )
+            train_result = train_dqn(
+                dqn,
+                market_seed=seed,
+                n_steps=config.dqn_n_steps,
+                eval_every=config.dqn_eval_every,
+                max_episode_steps=config.episode_steps,
+                eval_steps=500,
+                initial_cash=config.initial_cash,
+                train_seeds=train_seeds,
+                log_path=config.output_dir / f"h1_seed{seed}_log.csv",
+            )
+            dqn.save(dqn_ckpt)
+            train_logs = train_result["logs"]
+            print(f"    DQN (seed={seed}) done. Best eval return: {train_result['best_eval']:.2f}%")
+
+        seed_returns = dqn_eval(dqn, eval_seeds, config.episode_steps, config.initial_cash)
+        all_dqn_returns.extend(seed_returns)
+        print(f"    DQN (seed={seed}): {np.mean(seed_returns):.2f}% ± {np.std(seed_returns):.2f}%")
+
+    # Plot first agent's training progress
+    if train_logs:
         plot_path = config.output_dir / "h1_dqn_training.png"
         plot_training_run(
-            logs=train_result["logs"],
-            title="H1 — DQN Training Progress",
+            logs=train_logs,
+            title="H1 — DQN Training Progress (seed={})".format(train_seeds[0]),
             output_path=plot_path,
             eval_every=config.dqn_eval_every,
             total_steps=config.dqn_n_steps,
         )
 
-    # Evaluate DQN on held-out eval_seeds only
-    print(f"  Evaluating DQN on held-out seeds {eval_seeds}...")
-    from eval.agents.dqn import _eval_agent as dqn_eval
-    dqn_returns = dqn_eval(dqn, eval_seeds, config.episode_steps, config.initial_cash)
-    # _eval_agent returns portfolio return % (final_value / initial_cash)
-
     results["DQN"] = {
-        "mean_return": float(np.mean(dqn_returns)),
-        "std_return":  float(np.std(dqn_returns)),
-        "min_return":  float(np.min(dqn_returns)),
-        "max_return":  float(np.max(dqn_returns)),
-        "n_runs":      len(dqn_returns),
+        "mean_return": float(np.mean(all_dqn_returns)),
+        "std_return":  float(np.std(all_dqn_returns)),
+        "min_return":  float(np.min(all_dqn_returns)),
+        "max_return":  float(np.max(all_dqn_returns)),
+        "n_runs":      len(all_dqn_returns),
+        "train_seeds": train_seeds,
         "eval_seeds":  eval_seeds,
     }
-    print(f"    DQN: {np.mean(dqn_returns):.2f}% ± {np.std(dqn_returns):.2f}%")
+    print(f"  DQN (aggregate {len(all_dqn_returns)} runs): "
+          f"{np.mean(all_dqn_returns):.2f}% ± {np.std(all_dqn_returns):.2f}%")
 
     # Baselines — also evaluated on the SAME held-out eval_seeds
     for name, agent_cls in [
@@ -225,8 +232,8 @@ def run_h3(config: EvalConfig) -> dict:
     """
     print("\n=== H3: Regime-Aware DQN vs Plain DQN ===")
 
-    train_seeds = config.seeds[:-2]
-    eval_seeds  = config.seeds[-2:]
+    train_seeds = config.seeds[:-5]
+    eval_seeds  = config.seeds[-5:]
     print(f"  Train seeds: {train_seeds}")
     print(f"  Eval seeds:  {eval_seeds}")
 
@@ -241,64 +248,20 @@ def run_h3(config: EvalConfig) -> dict:
     scaler = pickle.load(open(scaler_path, "rb"))
 
 
-    def _eval_agent(agent, seeds):
-        returns = []
-        for seed in seeds:
-            market = CookieClickerMarket(n_stocks=1, seed=seed)
-            env    = TradingEnv(
-                market,
-                initial_cash=config.initial_cash,
-                max_steps=config.episode_steps,
-                seed=seed,
-            )
-            agent.reset()
-            obs = env.reset()
-            total_ret = 0.0
-            done = False
-            while not done:
-                action = agent.select_action(obs, {})
-                obs, reward, done, _ = env.step(action)
-                total_ret += reward
-            returns.append(total_ret * 100.0)
-        return returns
-
-    # --- Plain DQN ---
-    dqn_ckpt = Path("models/dqn_agent.pkl")
-    if dqn_ckpt.exists():
-        print("  Loading trained plain DQN...")
+    # --- Plain DQN (load all trained checkpoints from H1) ---
+    print(f"  Loading plain DQNs from H1 checkpoints...")
+    from eval.agents.dqn import _eval_agent as dqn_eval
+    all_dqn_returns: list[float] = []
+    for seed in train_seeds:
+        dqn_ckpt = Path(f"models/dqn_agent_{seed}.pkl")
+        if not dqn_ckpt.exists():
+            print(f"  ERROR: {dqn_ckpt} not found. Run H1 first.")
+            return {"error": "H1 checkpoints missing. Run H1 first."}
         dqn = DQNAgent.load(dqn_ckpt)
-    else:
-        print(f"  Training plain DQN for {config.dqn_n_steps} steps on seed={train_seeds[0]}...")
-        dqn = DQNAgent(
-            obs_dim=8, n_actions=3,
-            min_replay_size=500, batch_size=32,
-            seed=train_seeds[0],
-        )
-        from eval.agents.dqn import train_dqn
-        dqn_train_result = train_dqn(
-            dqn,
-            market_seed=train_seeds[0],
-            n_steps=config.dqn_n_steps,
-            eval_every=config.dqn_eval_every,
-            max_episode_steps=config.episode_steps,
-            eval_steps=500,
-            initial_cash=config.initial_cash,
-            verbose=True,
-        )
-        dqn.save("models/dqn_agent.pkl")
-
-        plot_path = config.output_dir / "h3_dqn_training.png"
-        plot_training_run(
-            logs=dqn_train_result["logs"],
-            title="H3 — Plain DQN Training Progress",
-            output_path=plot_path,
-            eval_every=config.dqn_eval_every,
-            total_steps=config.dqn_n_steps,
-        )
-
-    print(f"  Evaluating plain DQN on seeds {eval_seeds}...")
-    dqn_returns = _eval_agent(dqn, eval_seeds)
-    print(f"    DQN: {np.mean(dqn_returns):.2f}% ± {np.std(dqn_returns):.2f}%")
+        seed_returns = dqn_eval(dqn, eval_seeds, config.episode_steps, config.initial_cash)
+        all_dqn_returns.extend(seed_returns)
+        print(f"    DQN (seed={seed}): {np.mean(seed_returns):.2f}% ± {np.std(seed_returns):.2f}%")
+    print(f"  DQN aggregate: {np.mean(all_dqn_returns):.2f}% ± {np.std(all_dqn_returns):.2f}% ({len(all_dqn_returns)} runs)")
 
     # --- Regime-aware DQN ---
     # classify closure: uses clf/scaler (from outer scope) and agent._env (set at call time)
@@ -364,67 +327,73 @@ def run_h3(config: EvalConfig) -> dict:
             return int(clf.predict(x)[0])
         return classify
 
-    ra_dqn_ckpt = Path("models/ra_dqn_agent.pkl")
-    if ra_dqn_ckpt.exists():
-        print("  Loading trained regime-aware DQN...")
-        ra_dqn = RegimeAwareDQNAgent.load(ra_dqn_ckpt)
-        ra_dqn.set_classifier(make_classify_fn(ra_dqn, clf, scaler))
-    else:
-        print(f"  Training regime-aware DQN for {config.dqn_n_steps} steps on seed={train_seeds[0]}...")
-        ra_dqn = RegimeAwareDQNAgent(
-            obs_dim=8, n_actions=3,
-            min_replay_size=500, batch_size=32,
-            seed=train_seeds[0],
-        )
-        ra_dqn.set_classifier(make_classify_fn(ra_dqn, clf, scaler))
-        ra_train_result = _train_ra(
-            ra_dqn,
-            market_seed=train_seeds[0],
-            n_steps=config.dqn_n_steps,
-            eval_every=config.dqn_eval_every,
-            max_episode_steps=config.episode_steps,
-            eval_steps=500,
-            initial_cash=config.initial_cash,
-            train_seeds=train_seeds,
-        )
-        ra_dqn.save("models/ra_dqn_agent.pkl")
+    # --- Regime-aware DQN (one per train seed for fair comparison) ---
+    all_ra_returns: list[float] = []
+    ra_train_logs = None
 
+    for seed in train_seeds:
+        ra_ckpt = Path(f"models/ra_dqn_agent_{seed}.pkl")
+        if ra_ckpt.exists():
+            print(f"  Loading trained RA-DQN (seed={seed}) ...")
+            ra_dqn = RegimeAwareDQNAgent.load(ra_ckpt)
+            ra_dqn.set_classifier(make_classify_fn(ra_dqn, clf, scaler))
+        else:
+            print(f"  Training RA-DQN for {config.dqn_n_steps} steps on seed={seed}...")
+            ra_dqn = RegimeAwareDQNAgent(
+                obs_dim=8, n_actions=3,
+                min_replay_size=500, batch_size=32,
+                seed=seed,
+            )
+            ra_dqn.set_classifier(make_classify_fn(ra_dqn, clf, scaler))
+            ra_result = _train_ra(
+                ra_dqn,
+                market_seed=seed,
+                n_steps=config.dqn_n_steps,
+                eval_every=config.dqn_eval_every,
+                max_episode_steps=config.episode_steps,
+                eval_steps=500,
+                initial_cash=config.initial_cash,
+                train_seeds=train_seeds,
+                verbose=True,
+                log_path=config.output_dir / f"h3_ra_seed{seed}_log.csv",
+            )
+            ra_dqn.save(ra_ckpt)
+            ra_train_logs = ra_result["logs"]
+            print(f"    RA-DQN (seed={seed}) done. Best eval: {ra_result['best_eval']:.2f}%")
+
+        seed_returns = dqn_eval(ra_dqn, eval_seeds, config.episode_steps, config.initial_cash)
+        all_ra_returns.extend(seed_returns)
+        print(f"    RA-DQN (seed={seed}): {np.mean(seed_returns):.2f}% ± {np.std(seed_returns):.2f}%")
+
+    if ra_train_logs:
         plot_path = config.output_dir / "h3_ra_dqn_training.png"
         plot_training_run(
-            logs=ra_train_result["logs"],
-            title="H3 — Regime-Aware DQN Training Progress",
+            logs=ra_train_logs,
+            title="H3 — RA-DQN Training Progress (seed={})".format(train_seeds[0]),
             output_path=plot_path,
             eval_every=config.dqn_eval_every,
             total_steps=config.dqn_n_steps,
         )
 
-        # Overlay comparison plot
-        plot_h3_comparison(
-            dqn_logs=dqn_train_result["logs"],
-            ra_logs=ra_train_result["logs"],
-            output_path=config.output_dir / "h3_comparison.png",
-            eval_every=config.dqn_eval_every,
-            total_steps=config.dqn_n_steps,
-        )
-
-    print(f"  Evaluating regime-aware DQN on seeds {eval_seeds}...")
-    ra_returns = _eval_agent(ra_dqn, eval_seeds)
-    print(f"    DQN+Regime: {np.mean(ra_returns):.2f}% ± {np.std(ra_returns):.2f}%")
+    print(f"  RA-DQN aggregate: {np.mean(all_ra_returns):.2f}% ± {np.std(all_ra_returns):.2f}% "
+          f"({len(all_ra_returns)} runs)")
 
     results = {
         "DQN": {
-            "mean_return": float(np.mean(dqn_returns)),
-            "std_return":  float(np.std(dqn_returns)),
-            "n_runs":      len(dqn_returns),
+            "mean_return": float(np.mean(all_dqn_returns)),
+            "std_return":  float(np.std(all_dqn_returns)),
+            "n_runs":      len(all_dqn_returns),
+            "train_seeds": train_seeds,
             "eval_seeds":  eval_seeds,
         },
         "DQN_Regime": {
-            "mean_return": float(np.mean(ra_returns)),
-            "std_return":  float(np.std(ra_returns)),
-            "n_runs":      len(ra_returns),
+            "mean_return": float(np.mean(all_ra_returns)),
+            "std_return":  float(np.std(all_ra_returns)),
+            "n_runs":      len(all_ra_returns),
+            "train_seeds": train_seeds,
             "eval_seeds":  eval_seeds,
         },
-        "h3_pass": float(np.mean(ra_returns)) > float(np.mean(dqn_returns)),
+        "h3_pass": float(np.mean(all_ra_returns)) > float(np.mean(all_dqn_returns)),
     }
     h3_pass = results["h3_pass"]
     print(f"\n  H3 verdict: {'PASS ✓' if h3_pass else 'FAIL ✗'} (DQN+Regime vs DQN)")
@@ -444,6 +413,8 @@ def _train_ra(
     eval_steps: int,
     initial_cash: float,
     train_seeds: list[int] | None = None,
+    verbose: bool = False,
+    log_path: Path | None = None,
 ) -> dict:
     """
     Train a regime-aware DQN agent.
@@ -453,6 +424,7 @@ def _train_ra(
                       the training seed to avoid leakage).
     """
     import sys
+    import csv
     logs = {"loss": [], "epsilon": [], "episode_return": [], "eval_returns": []}
     best_eval = -np.inf
 
@@ -474,51 +446,77 @@ def _train_ra(
     if train_seeds:
         eval_seed_pool = [s for s in eval_seed_pool if s not in train_seeds]
 
-    iterator = tqdm(range(n_steps), desc="RA-DQN", unit="step")
+    # Open CSV log for incremental writes
+    csv_file = None
+    csv_writer = None
+    if log_path:
+        csv_file = open(log_path, "w", newline="")
+        csv_writer = csv.DictWriter(csv_file, fieldnames=["step", "loss", "epsilon", "episode_return", "eval_return_pct"])
+        csv_writer.writeheader()
 
-    for step in iterator:
-        action    = agent._epsilon_greedy(obs, training=True)
-        next_obs, reward, done, info = env.step(action)
-        episode_return += reward
+    iterator = tqdm(range(n_steps), desc="RA-DQN", unit="step", disable=not verbose)
 
-        # store() with no regime args → infers internally via _infer_regime,
-        # which calls the injected classifier closure (uses agent._env for features)
-        agent.store(obs, action, reward, next_obs, done)
-        obs = next_obs
+    try:
+        for step in iterator:
+            action    = agent._epsilon_greedy(obs, training=True)
+            next_obs, reward, done, info = env.step(action)
+            episode_return += reward
 
-        loss = agent.train_step()
-        if loss is not None:
-            logs["loss"].append(float(loss))
+            # store() with no regime args → infers internally via _infer_regime,
+            # which calls the injected classifier closure (uses agent._env for features)
+            agent.store(obs, action, reward, next_obs, done)
+            obs = next_obs
 
-        logs["epsilon"].append(agent.epsilon)
+            loss = agent.train_step()
+            if loss is not None:
+                logs["loss"].append(float(loss))
 
-        if done:
-            logs["episode_return"].append(float(episode_return))
-            episode_return = 0.0
-            env.reset()
-            agent.reset()
-            obs = env.reset()
+            logs["epsilon"].append(agent.epsilon)
 
-        if (step + 1) % eval_every == 0:
-            # quick eval on held-out seeds only
-            ev_returns = []
-            for s in eval_seed_pool[:3]:
-                m = CookieClickerMarket(n_stocks=1, seed=s)
-                e = TradingEnv(m, initial_cash=initial_cash, max_steps=eval_steps, seed=s)
+            if done:
+                logs["episode_return"].append(float(episode_return))
+                episode_return = 0.0
+                env.reset()
                 agent.reset()
-                o = e.reset()
-                ret = 0.0
-                dn = False
-                while not dn:
-                    a = agent.select_action(o, {})
-                    o, r, dn, _ = e.step(a)
-                    ret += r
-                ev_returns.append(ret * 100.0)
-            mean_ev = float(np.mean(ev_returns))
-            logs["eval_returns"].append(mean_ev)
-            if mean_ev > best_eval:
-                best_eval = mean_ev
-            iterator.set_postfix(epsilon=f"{agent.epsilon:.3f}", eval_ret=f"{mean_ev:.2f}%")
+                obs = env.reset()
+
+            if (step + 1) % eval_every == 0:
+                # quick eval on held-out seeds only
+                ev_returns = []
+                for s in eval_seed_pool[:3]:
+                    m = CookieClickerMarket(n_stocks=1, seed=s)
+                    e = TradingEnv(m, initial_cash=initial_cash, max_steps=eval_steps, seed=s)
+                    agent.reset()
+                    o = e.reset()
+                    ret = 0.0
+                    dn = False
+                    while not dn:
+                        a = agent.select_action(o, {})
+                        o, r, dn, _ = e.step(a)
+                        ret += r
+                    ev_returns.append(ret * 100.0)
+                mean_ev = float(np.mean(ev_returns))
+                logs["eval_returns"].append(mean_ev)
+                if mean_ev > best_eval:
+                    best_eval = mean_ev
+                iterator.set_postfix(epsilon=f"{agent.epsilon:.3f}", eval_ret=f"{mean_ev:.2f}%")
+
+                # Incrementally write to CSV
+                if csv_writer is not None:
+                    last_loss = logs["loss"][-1] if logs["loss"] else ""
+                    last_ep  = logs["episode_return"][-1] if logs["episode_return"] else ""
+                    csv_writer.writerow({
+                        "step": step + 1,
+                        "loss": last_loss,
+                        "epsilon": agent.epsilon,
+                        "episode_return": last_ep,
+                        "eval_return_pct": mean_ev,
+                    })
+                    csv_file.flush()
+
+    finally:
+        if csv_file is not None:
+            csv_file.close()
 
     return {"logs": logs, "best_eval": float(best_eval)}
 
@@ -589,7 +587,7 @@ if __name__ == "__main__":
     parser.add_argument("--h2", action="store_true", help="Run H2 only")
     parser.add_argument("--h3", action="store_true", help="Run H3 only")
     parser.add_argument("--steps", type=int, default=20_000, help="DQN training steps")
-    parser.add_argument("--seeds", type=int, nargs="+", default=[42, 123, 456, 789, 1024])
+    parser.add_argument("--seeds", type=int, nargs="+", default=[42, 123, 456, 789, 1024, 2048, 4096, 8192])
     args = parser.parse_args()
 
     config = EvalConfig(

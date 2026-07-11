@@ -1,4 +1,4 @@
-# CONTRACT -- Interface between Sim and Eval (v2)
+# CONTRACT -- Interface between Sim and Eval (v3)
 
 This is the binding interface between the simulator (`sim/`) and the rest of the
 system (`eval/`). **Both roles must conform exactly.** Lead approves changes.
@@ -91,7 +91,7 @@ def generate_regime_dataset(
     """Run the simulator for n_ticks and dump (X, y) pairs."""
 ```
 
-Output format: a single parquet file with 18 feature columns + mode label:
+Output format: a single parquet file with 18 feature columns + labels:
 
 ```
 [tick, stock_id, price,
@@ -103,7 +103,8 @@ Output format: a single parquet file with 18 feature columns + mode label:
  jump_count_5, jump_count_20, max_tick_return_5,
  trend_strength_5, trend_strength_20,
  momentum_divergence, vol_regime_5,
- mode]            # mode is the label y
+ mode,            # underlying 6-class JS mode
+ macro_regime]    # 4-class label: Stable(0)/Bull(1)/Bear(2)/Chaotic(3)
 ```
 
 Eval reads this file. Eval **must not** call `get_observation(reveal=True)`
@@ -136,11 +137,12 @@ Eval defines the exact reward; the contract only requires that the env returns
 
 ## 4. Versioning
 
-This contract is **v1**. Breaking changes require:
+This contract is **v3** (bumped from v2 on 2026-07-11 with 4-class regime consolidation,
+added macro_regime column, episode length = 500 ticks). Breaking changes require:
 
-1. Proposal in STATUS.md under "Disputes."
+1. Proposal in collaboration/STATUS.md under "Disputes."
 2. Vote per PROTOCOL.md §7.
-3. Bump version to v2 at the top of this file.
+3. Bump version at the top of this file.
 4. Both roles update in the same commit, coordinated by Lead.
 
 ## 5. What is NOT in this contract

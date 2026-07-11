@@ -9,7 +9,6 @@ in test_run_pipeline_when_data_exists().
 import numpy as np
 import pandas as pd
 import pytest
-import tempfile
 from pathlib import Path
 
 from eval.classifiers.regime_classifier import (
@@ -26,7 +25,7 @@ from eval.classifiers.regime_classifier import (
 def small_dataset(tmp_path):
     """
     Create a tiny synthetic parquet file:
-    500 rows, 6 regimes, 18 features + mode column.
+    500 rows, 4 macro-regimes, 18 features + macro_regime column.
     """
     n = 500
     rng = np.random.default_rng(0)
@@ -50,7 +49,7 @@ def small_dataset(tmp_path):
         'trend_strength_20': rng.standard_normal(n),
         'momentum_divergence': rng.integers(0, 2, n),
         'vol_regime_5': rng.uniform(0.1, 3, n),
-        'mode':          rng.integers(0, 6, n),
+        'macro_regime': rng.integers(0, 4, n),
     }
     df = pd.DataFrame(data)
     path = tmp_path / "test_regime.parquet"
@@ -155,12 +154,12 @@ class TestRegimeClassifierPredict:
 
 class TestRegimeClassifierConstants:
     def test_n_classes(self):
-        assert N_CLASSES == 6
+        assert N_CLASSES == 4
 
     def test_regime_names(self):
-        assert set(REGIME_NAMES.keys()) == set(range(6))
+        assert set(REGIME_NAMES.keys()) == set(range(4))
         assert REGIME_NAMES[0] == 'Stable'
-        assert REGIME_NAMES[5] == 'Chaotic'
+        assert REGIME_NAMES[3] == 'Chaotic'
 
 
 class TestRegimeClassifierErrors:
@@ -175,7 +174,7 @@ class TestRegimeClassifierErrors:
     def test_predict_before_run_raises(self):
         pipe = RegimeClassifierPipeline()
         with pytest.raises(RuntimeError, match="run"):
-            pipe.predict([0.0] * 7)
+            pipe.predict([0.0] * 18)
 
 
 if __name__ == "__main__":

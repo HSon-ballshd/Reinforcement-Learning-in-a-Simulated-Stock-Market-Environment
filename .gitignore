@@ -86,6 +86,10 @@ outputs/
 *.pkl
 *.pth
 
+# Package dirs — must re-exclude eval/env and sim/ (not virtual envs)
+/eval/env/
+/sim/
+
 # OS
 .DS_Store
 Thumbs.db

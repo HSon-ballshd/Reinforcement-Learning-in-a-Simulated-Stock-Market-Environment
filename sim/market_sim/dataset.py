@@ -2,14 +2,23 @@
 Dataset generation for regime classification.
 
 Generates a parquet file with (X, y) pairs where X is observable features
-and y is the hidden regime (mode).
+and y is the hidden macro-regime (Stable/Bull/Bear/Chaotic).
+
+Labels are 4 macro-regimes collapsing the 6 underlying JS modes:
+    Stable (0) + Bullish (1) + Strong Bull (3) → Bull   (1)
+    Bearish (2) + Strong Bear (4)               → Bear   (2)
+    Stable (0)                                  → Stable (0)
+    Chaotic (5)                                 → Chaotic (3)
 """
 
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 from .simulator import CookieClickerMarket
+
+# Underlying JS mode → 4-class macro-regime
+_MODE_TO_MACRO = {0: 0, 1: 1, 2: 2, 3: 1, 4: 2, 5: 3}
 
 
 def generate_regime_dataset(
@@ -25,7 +34,7 @@ def generate_regime_dataset(
     and the ground-truth regime (mode) as the label.
 
     Args:
-        n_ticks: Number of ticks to simulate. Default 5000.
+        n_ticks: Number of ticks to simulate. Default 20000.
         n_stocks: Number of stocks. Default 1 (per SPEC.md v1).
         seed: RNG seed for reproducibility. Default 0.
         out_path: Output parquet file path. Default "data/regime_dataset.parquet".
@@ -33,13 +42,18 @@ def generate_regime_dataset(
     Returns:
         Path object pointing to the created parquet file.
 
-    Output columns (13 features + mode label):
+    Output columns (18 features + labels):
         [tick, stock_id, price,
-         return_1, return_5, return_20,
-         rolling_mean_5, rolling_mean_20, rolling_std_20, momentum_5_20,
-         drift_proxy, vol_ratio, mean_reversion_signal,
-         directional_consistency, sharpe_proxy, momentum_divergence,
-         mode]                  # mode is the label (y)
+         return_1, return_5, return_10, return_20,
+         rolling_std_5, rolling_std_20, rolling_std_ratio,
+         mean_reversion_z,
+         directional_consistency_5, directional_consistency_20,
+         drift_estimate_5,
+         jump_count_5, jump_count_20, max_tick_return_5,
+         trend_strength_5, trend_strength_20,
+         momentum_divergence, vol_regime_5,
+         mode,                 # underlying 6-class JS mode
+         macro_regime]         # 4-class label used for training
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -145,6 +159,7 @@ def generate_regime_dataset(
                 'momentum_divergence': mom_div,
                 'vol_regime_5':   vol_reg,
                 'mode': int(mode),
+                'macro_regime': _MODE_TO_MACRO[int(mode)],
             })
 
         # Advance market

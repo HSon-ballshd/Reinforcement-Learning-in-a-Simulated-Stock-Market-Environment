@@ -5,8 +5,8 @@ Hypothesis H3: regime-aware DQN beats plain DQN by conditioning Q(s,r|a)
 on an inferred regime embedding.
 
 Architecture change vs plain DQN:
-    obs (8-dim) + regime_onehot (6-dim) → 14-dim state
-    Q(s,r) network: 14 → 128 → 64 → 3
+    obs (8-dim) + regime_onehot (4-dim) → 12-dim state
+    Q(s,r) network: 12 → 128 → 64 → 3
 
 The classifier is injected via set_classifier(), so this module
 does NOT import RegimeClassifierPipeline (avoids circular deps).
@@ -20,10 +20,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from pathlib import Path
-from collections import deque, namedtuple
+from collections import namedtuple
 from typing import Optional
 
-from eval.agents.dqn import QNetwork, ReplayBuffer
+from eval.agents.dqn import ReplayBuffer
 
 Transition = namedtuple("Transition", ["obs", "regime", "action", "reward", "next_obs", "next_regime", "done"])
 
@@ -31,15 +31,15 @@ Transition = namedtuple("Transition", ["obs", "regime", "action", "reward", "nex
 class RegimeAwareQNetwork(nn.Module):
     """
     Q-network that takes observation + regime one-hot as input.
-    Identical MLP shape to QNetwork but with obs_dim + 6 inputs.
+    Identical MLP shape to QNetwork but with obs_dim + n_regimes inputs.
     """
 
-    def __init__(self, obs_dim: int = 8, hidden_dims: list[int] | None = None, n_actions: int = 3):
+    def __init__(self, obs_dim: int = 8, hidden_dims: list[int] | None = None, n_actions: int = 3, n_regimes: int = 4):
         super().__init__()
         if hidden_dims is None:
             hidden_dims = [128, 64]
         layers = []
-        prev = obs_dim + 6   # obs + one-hot regime
+        prev = obs_dim + n_regimes   # obs + one-hot regime
         for h in hidden_dims:
             layers.extend([nn.Linear(prev, h), nn.ReLU()])
             prev = h
@@ -69,6 +69,7 @@ class RegimeAwareDQNAgent:
         self,
         obs_dim: int = 8,
         n_actions: int = 3,
+        n_regimes: int = 4,
         hidden_dims: list[int] | None = None,
         lr: float = 1e-3,
         gamma: float = 0.99,
@@ -85,6 +86,7 @@ class RegimeAwareDQNAgent:
     ) -> None:
         self.obs_dim   = obs_dim
         self.n_actions = n_actions
+        self.n_regimes = n_regimes
         self.hidden_dims = hidden_dims or [128, 64]
         self.gamma             = gamma
         self.epsilon_start     = epsilon_start
@@ -104,8 +106,9 @@ class RegimeAwareDQNAgent:
             torch.manual_seed(seed)
 
         # Networks — 14-dim input (8 obs + 6 regime)
-        self.q_net     = RegimeAwareQNetwork(obs_dim, hidden_dims, n_actions).to(self.device)
-        self.target_net = RegimeAwareQNetwork(obs_dim, hidden_dims, n_actions).to(self.device)
+        self.n_regimes = n_regimes
+        self.q_net     = RegimeAwareQNetwork(obs_dim, hidden_dims, n_actions, n_regimes).to(self.device)
+        self.target_net = RegimeAwareQNetwork(obs_dim, hidden_dims, n_actions, n_regimes).to(self.device)
         self.target_net.load_state_dict(self.q_net.state_dict())
         self.target_net.eval()
 
@@ -127,8 +130,8 @@ class RegimeAwareDQNAgent:
         Inject a regime classifier function.
 
         Args:
-            classifier_fn: callable that takes a (7,) observation array
-                           and returns an int in [0, 5].
+            classifier_fn: callable that takes a (18,) feature array
+                           and returns an int in [0, 3] (Stable/Bull/Bear/Chaotic).
         """
         self._classifier_fn = classifier_fn
 
@@ -150,7 +153,7 @@ class RegimeAwareDQNAgent:
     # Internal helpers
     # ------------------------------------------------------------------
     def _regime_onehot(self, regime: int) -> np.ndarray:
-        vec = np.zeros(6, dtype=np.float32)
+        vec = np.zeros(self.n_regimes, dtype=np.float32)
         vec[regime] = 1.0
         return vec
 
@@ -212,7 +215,7 @@ class RegimeAwareDQNAgent:
 
         # Build state tensors
         def state_from_batch(obs_arr, regimes):
-            states = np.concatenate([obs_arr, np.eye(6)[regimes]], axis=1)
+            states = np.concatenate([obs_arr, np.eye(self.n_regimes)[regimes]], axis=1)
             return self._to_tensor(states)
 
         state_batch     = state_from_batch(obs_batch, regime_batch)
@@ -260,6 +263,7 @@ class RegimeAwareDQNAgent:
             "global_step":       self.global_step,
             "obs_dim":           self.obs_dim,
             "n_actions":         self.n_actions,
+            "n_regimes":         self.n_regimes,
             "hidden_dims":       self.hidden_dims,
         }
         pickle.dump(state, open(path, "wb"))
@@ -271,6 +275,7 @@ class RegimeAwareDQNAgent:
         agent = cls(
             obs_dim=state["obs_dim"],
             n_actions=state["n_actions"],
+            n_regimes=state["n_regimes"],
             hidden_dims=state["hidden_dims"],
             device=device,
         )
