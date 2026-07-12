@@ -7,15 +7,12 @@
 | Role | Folder | Status |
 |---|---|---|
 | Sim | `sim/` | **Complete** (T-001 to T-005 done) |
-| Eval | `eval/` | **Complete** (T-201 to T-215 done; H1/H2 PASS, H3 pending RA-DQN training) |
-| Lead | `collaboration/` | **Active** — integrating and committing final results |
+| Eval | `eval/` | **Complete** (T-201 to T-226 + T-301/T-302/T-303 done; all 3 hypotheses evaluated) |
+| Lead | `collaboration/` | **Active** — final commit |
 
 ## In Progress
 
-| ID | Title | Role | Notes |
-|---|---|---|---|
-| T-300 | H3: RA-DQN vs plain DQN comparison | Eval | Models invalidated by T-223/T-224/T-225/T-226 — retraining required |
-| T-226 | Fix tx cost: BUY cost from cash before trade; MeanReversion BUY guard | Eval | Tx cost now pre-deducted from cash (can't buy without covering cost); MeanReversion only BUY when not already holding; 35 buys/34 sells vs 184 buys before |
+_(none)_
 
 ## Proposed
 
@@ -25,14 +22,7 @@ _(none)_
 
 _(none)_
 
-## Done (this session)
-
-| ID | Title | Role | Status | Notes |
-|---|---|---|---|---|
-| T-226 | Fix tx cost: BUY cost from cash before trade; MeanReversion BUY guard | Eval | ✓ | Tx cost pre-deducted so agent can't overspend; MeanReversion BUY-only-when-not-holding; 35 trades vs 184 before |
-| T-225 | Replace Stacking with RandomForest as best classifier | Eval | ✓ | Stacking removed; RF selected (75.1%); RA-DQN eval ~10× faster |
-| T-224 | Fix reward explosion: reward normalization + eval info dict | Eval | ✓ | Reward divided by initial_cash; _eval_agent/_train_ra pass real info dict |
-| T-223 | Apply team-member bug fixes (off-by-one returns, tx cost, global shock, info dict) | Eval | ✓ | 7 verified fixes from teammate; models invalidated; tests 107→108 passed |
+## Done
 
 | ID | Title | Role | Status | Notes |
 |---|---|---|---|---|
@@ -97,22 +87,32 @@ _(none)_
 |---|---|---|---|---|
 | H-001 | Sim | Eval | Market simulator fully tested and ready. Call `CookieClickerMarket(seed=42)` and `generate_regime_dataset()` to start. | **ACCEPTED** — Eval imports sim; TradingEnv wraps market; dataset pipeline in place. |
 
-## Results Summary (2026-07-12 — PRELIMINARY, ALL MODELS MUST RETRAIN)
+## Results Summary (2026-07-12 — FINAL)
 
-| Experiment | Verdict | Key Result |
+| Experiment | Verdict | Key Result | Details |
+|---|---|---|---|
+| **H1** | PASS ✓ | DQN +1.58M% > Random +153% > BuyAndHold +151% | 3 train × 5 eval = 15 runs; Welch t p=0.035, Cohen's d=+0.88 |
+| **H2** | PASS ✓ | GradBoost 75.1% [73.8%, 76.4%] > 25.0% random | +50.1% lift; binomial test p≈0; 4,000 held-out test samples |
+| **H3** | FAIL ✗ | RA-DQN 3.63M% vs DQN 1.12M% (not significant) | 3 train × 25 eval = 150 runs; Welch t p=0.23; high variance in RA-DQN |
+
+### Evaluation outputs
+
+| Script | Command | Outputs |
 |---|---|---|
-| **H1** | PASS ✓ | DQN (543K%) > Random (432%) > BuyAndHold (14%) |
-| **H2** | PASS ✓ | ExtraTrees 48.3% vs 25.0% random (1.93×) |
-| **H3** | PENDING | RA-DQN training in progress |
+| H1 | `python -m eval.h1_eval` | `outputs/h1_eval_summary_{ts}.json`, `h1_eval_runs_{ts}.csv`, `h1_eval_fig_{ts}.png` |
+| H2 | `python -m eval.h2_eval` | `outputs/h2_eval_summary_{ts}.json`, `h2_eval_models_{ts}.csv`, `h2_eval_fig_{ts}.png` |
+| H3 | `python -m eval.h3_eval` | `outputs/h3_eval_summary_{ts}.json`, `h3_eval_runs_{ts}.csv`, `h3_eval_fig_{ts}.png` |
 
-**H3 train seeds:** [42, 123, 456]
-**H3 eval seeds:** [789, 1024, 2048, 4096, 8192]
-**Episode length:** 500 ticks
-**Checkpoint files:** `models/dqn_agent_{seed}.pkl`, `models/ra_dqn_agent_{seed}.pkl`
-**Training logs:** `outputs/{exp}_seed{seed}_log.csv`
-**Plots:** `outputs/{exp}_seed{seed}.png`, `outputs/h3_comparison.png`
+### Eval seeds
+
+| Pool | Seeds | Used by |
+|---|---|---|
+| Train | [42, 123, 456] | DQN and RA-DQN training |
+| Harness eval | [789, 1024, 2048, 4096, 8192] | eval_harness (H1 baseline) |
+| H3 eval | [11,13,17,…,9000] (25 primes + large ints) | h3_eval.py |
+| H2 test | 20% of 20k dataset (~4,000 samples) | h2_eval.py |
 
 ## Concerns
 
 - **C-001** (resolved): H2 accuracy was stuck at ~45% on 6 classes. Resolved by T-215 (4-class consolidation).
-- **C-002** (open): Cookie Clicker market compounds aggressively (~1% per tick). Reported returns are in millions of percent. Presented as multiples relative to BuyAndHold in reports.
+- **C-002** (informational): Cookie Clicker market compounds aggressively (~1% per tick). Reported returns are in millions of percent. Normalise to multiples or BuyAndHold ratio in the report.
