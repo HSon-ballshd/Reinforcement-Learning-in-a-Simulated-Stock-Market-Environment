@@ -280,9 +280,9 @@ def run_h3(config: EvalConfig) -> dict:
             def trets(n): return tick_rets[:n]
 
             ret_1  = tick_rets[0] if len(tick_rets) >= 1 else 0.0
-            ret_5  = (vals[0] - vals[4]) / vals[4] if len(vals) > 4 else 0.0
-            ret_10 = (vals[0] - vals[9]) / vals[9] if len(vals) > 9 else 0.0
-            ret_20 = (vals[0] - vals[19]) / vals[19] if len(vals) > 19 else 0.0
+            ret_5  = (vals[0] - vals[5]) / vals[5] if len(vals) > 5 else 0.0
+            ret_10 = (vals[0] - vals[10]) / vals[10] if len(vals) > 10 else 0.0
+            ret_20 = (vals[0] - vals[20]) / vals[20] if len(vals) > 20 else 0.0
 
             rstd_5  = float(np.std(trets(5)))  if len(tick_rets) >= 5  else 0.0
             rstd_20 = float(np.std(trets(20))) if len(tick_rets) >= 20 else 0.0

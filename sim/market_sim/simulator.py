@@ -118,8 +118,8 @@ class CookieClickerMarket:
         glob_d = 0.0
         glob_p = self.rng.uniform(0, 1)
         
-        # JS line 807: 10% chance of global shock (but with dragonBoost=0, skipped)
-        if self.rng.uniform(0, 1) < 0.1 + 0.1 * dragon_boost:
+        # JS line 807: global shock only triggers when dragonBoost > 0
+        if dragon_boost > 0 and self.rng.uniform(0, 1) < 0.1 + 0.1 * dragon_boost:
             glob_d = (self.rng.uniform(0, 1) - 0.5) * 2
         
         for stock in self.stocks:
@@ -279,10 +279,10 @@ class CookieClickerMarket:
             ret_1 = (vals[0] - vals[1]) / vals[1] if len(vals) > 1 else 0.0
             stock_features.append(ret_1)
             
-            ret_5 = (vals[0] - vals[4]) / vals[4] if len(vals) > 4 else 0.0
+            ret_5 = (vals[0] - vals[5]) / vals[5] if len(vals) > 5 else 0.0
             stock_features.append(ret_5)
-            
-            ret_20 = (vals[0] - vals[19]) / vals[19] if len(vals) > 19 else 0.0
+
+            ret_20 = (vals[0] - vals[20]) / vals[20] if len(vals) > 20 else 0.0
             stock_features.append(ret_20)
             
             # Rolling mean over 5 and 20 ticks

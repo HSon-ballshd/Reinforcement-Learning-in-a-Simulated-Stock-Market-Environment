@@ -161,9 +161,16 @@ def evaluate_agent(
         agent._env = env
 
     n_buys = n_sells = n_holds = 0
+    info = {
+        'portfolio_value': env._portfolio_value(),
+        'cash': env.cash,
+        'holdings': env.holdings,
+        'price': env.market.stocks[0]['price'],
+        'step': 0,
+    }
 
     for _ in range(n_steps):
-        action = agent.select_action(obs, {})
+        action = agent.select_action(obs, info)
         obs, _, done, info = env.step(action)
 
         if action == TradingEnv.BUY:

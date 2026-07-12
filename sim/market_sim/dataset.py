@@ -89,9 +89,9 @@ def generate_regime_dataset(
 
             # Multi-window returns
             ret_1   = float(tick_rets_all[0])  if len(tick_rets_all) >= 1 else 0.0
-            ret_5   = float((vals[0] - vals[4]) / (vals[4] + 1e-8)) if len(vals) > 4 else 0.0
-            ret_10  = float((vals[0] - vals[9]) / (vals[9] + 1e-8)) if len(vals) > 9 else 0.0
-            ret_20  = float((vals[0] - vals[19]) / (vals[19] + 1e-8)) if len(vals) > 19 else 0.0
+            ret_5   = float((vals[0] - vals[5]) / (vals[5] + 1e-8)) if len(vals) > 5 else 0.0
+            ret_10  = float((vals[0] - vals[10]) / (vals[10] + 1e-8)) if len(vals) > 10 else 0.0
+            ret_20  = float((vals[0] - vals[20]) / (vals[20] + 1e-8)) if len(vals) > 20 else 0.0
 
             # Rolling volatility (std of tick-returns)
             rstd_5  = float(np.std(trets(5)))   if len(tick_rets_all) >= 5  else 0.0

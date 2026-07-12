@@ -103,10 +103,12 @@ class TradingEnv:
         curr_value = self._portfolio_value()
         reward     = curr_value - prev_value
 
-        # Transaction-cost penalty
+        # Transaction-cost penalty — deducted from both reward AND cash
         if action in (self.BUY, self.SELL):
             cost = self.transaction_cost_pct * curr_value
             reward -= cost
+            self.cash -= cost
+            self.cash = max(self.cash, 0.0)  # clamp tiny negative floats from float rounding
 
         # Normalise by CURRENT portfolio value to keep rewards bounded
         # (dividing by initial_cash lets returns explode in bull markets)
@@ -125,6 +127,7 @@ class TradingEnv:
             'price':           self.market.stocks[0]['price'],
             'action':          action,
             'step':            self._step_count,
+            'transaction_cost': cost if action in (self.BUY, self.SELL) else 0.0,
         }
 
         return obs, reward, done, info
@@ -246,8 +249,8 @@ class TradingEnv:
     def _is_done(self) -> bool:
         if self.max_steps is not None and self._step_count >= self.max_steps:
             return True
-        # Safety floor: if cash goes negative the episode is invalid
-        if self.cash < 0:
+        # Safety floor: if cash goes genuinely negative (not just float rounding), episode is invalid
+        if self.cash < -1e-8:
             return True
         return False
 
