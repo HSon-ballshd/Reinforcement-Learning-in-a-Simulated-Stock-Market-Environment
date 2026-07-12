@@ -75,20 +75,17 @@ venv.bak/
 # mypy
 .mypy_cache/
 
-# Data outputs (large files, experiment artifacts)
+# Data outputs (large files)
 data/
 logs/
-models/
 outputs/
 *.parquet
 *.csv
 *.h5
-*.pkl
-*.pth
+*.png
 
-# Package dirs — must re-exclude eval/env and sim/ (not virtual envs)
-/eval/env/
-/sim/
+# models/ directory is NOT gitignored — track trained checkpoints (.pkl)
+models/
 
 # OS
 .DS_Store
