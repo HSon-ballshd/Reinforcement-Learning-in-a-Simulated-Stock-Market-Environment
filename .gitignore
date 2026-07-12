@@ -1,5 +1,5 @@
 # Byte-compiled / optimized / DLL files
-__pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -60,7 +60,7 @@ venv.bak/
 
 # IDEs
 .idea/
-.vscode/
+**/.vscode/
 *.swp
 *.swo
 *~
@@ -73,7 +73,7 @@ venv.bak/
 .python-version
 
 # mypy
-.mypy_cache/
+**/.mypy_cache/
 
 # Data outputs (large files)
 data/

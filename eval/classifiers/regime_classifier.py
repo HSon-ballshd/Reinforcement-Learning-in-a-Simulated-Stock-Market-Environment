@@ -138,22 +138,6 @@ class RegimeClassifierPipeline:
             self.val_scores[name] = val_acc
             print(f"  {name}: val_acc = {val_acc:.4f}")
 
-        # Stacking ensemble: use base-model OOF probability predictions as meta-features
-        from sklearn.ensemble import StackingClassifier
-        stacking = StackingClassifier(
-            estimators=list(self._model_factory().items()),
-            final_estimator=LogisticRegression(max_iter=2000, C=1.0, random_state=self.random_state),
-            cv=5,   # 5-fold internal CV to generate meta-features for the meta-learner
-            passthrough=False,   # only use base model probabilities, not original features
-            n_jobs=-1,
-        )
-        stacking.fit(X_train, y_train)
-        stack_val_preds = stacking.predict(X_val)
-        stack_val_acc  = accuracy_score(y_val, stack_val_preds)
-        self.models["Stacking"] = stacking
-        self.val_scores["Stacking"] = stack_val_acc
-        print(f"  Stacking:  val_acc = {stack_val_acc:.4f}")
-
         # Select best model by val accuracy
         self.best_name  = max(self.val_scores, key=self.val_scores.get)
         self.best_model = self.models[self.best_name]
