@@ -481,20 +481,26 @@ def _train_ra(
                 obs = env.reset()
 
             if (step + 1) % eval_every == 0:
-                # quick eval on held-out seeds only
+                # quick eval on held-out seeds only — use actual portfolio return %
                 ev_returns = []
                 for s in eval_seed_pool[:3]:
                     m = CookieClickerMarket(n_stocks=1, seed=s)
                     e = TradingEnv(m, initial_cash=initial_cash, max_steps=eval_steps, seed=s)
                     agent.reset()
                     o = e.reset()
-                    ret = 0.0
+                    info = {
+                        'portfolio_value': initial_cash,
+                        'cash': initial_cash,
+                        'holdings': 0.0,
+                        'price': m.stocks[0]['price'],
+                        'step': 0,
+                    }
                     dn = False
                     while not dn:
-                        a = agent.select_action(o, {})
-                        o, r, dn, _ = e.step(a)
-                        ret += r
-                    ev_returns.append(ret * 100.0)
+                        a = agent.select_action(o, info)
+                        o, _, dn, info = e.step(a)
+                    final_val = e._portfolio_value()
+                    ev_returns.append((final_val - initial_cash) / initial_cash * 100.0)
                 mean_ev = float(np.mean(ev_returns))
                 logs["eval_returns"].append(mean_ev)
                 if mean_ev > best_eval:

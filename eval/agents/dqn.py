@@ -423,9 +423,16 @@ def _eval_agent(
             agent._env = env
         obs = env.reset()
         done = False
+        info = {
+            'portfolio_value': env._portfolio_value(),
+            'cash': env.cash,
+            'holdings': env.holdings,
+            'price': env.market.stocks[0]['price'],
+            'step': 0,
+        }
         while not done:
-            action = agent.select_action(obs, {})
-            obs, _, done, _ = env.step(action)
+            action = agent.select_action(obs, info)
+            obs, _, done, info = env.step(action)
         # Compute actual portfolio return %
         final_value   = env._portfolio_value()
         total_return  = (final_value - initial_cash) / initial_cash * 100.0

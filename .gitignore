@@ -84,7 +84,7 @@ outputs/
 *.h5
 *.png
 
-# models/ directory is NOT gitignored — track trained checkpoints (.pkl)
+# models/ directory is NOT gitignored — track trained checkpoints
 models/
 
 # OS

@@ -1,6 +1,6 @@
 # STATUS — Live status board
 
-> **Last updated:** 2026-07-11
+> **Last updated:** 2026-07-12
 
 ## Roles
 
@@ -14,8 +14,8 @@
 
 | ID | Title | Role | Notes |
 |---|---|---|---|
-| T-300 | H3: RA-DQN vs plain DQN comparison | Eval | All checkpoints invalidated by T-223 fixes — must retrain after T-223 is merged |
-| T-223 | Apply team-member bug fixes (off-by-one returns, tx cost, global shock, info dict) | Eval | All 7 verified fixes applied; invalidate all trained models (H1/H2/H3 must retrain) |
+| T-300 | H3: RA-DQN vs plain DQN comparison | Eval | Models invalidated by T-223/T-224 — retraining required |
+| T-224 | Fix reward explosion: reward normalization + eval info dict | Eval | Reward now divided by initial_cash (not curr_value); _eval_agent and _train_ra use real info dict |
 
 ## Proposed
 
@@ -29,6 +29,7 @@ _(none)_
 
 | ID | Title | Role | Status | Notes |
 |---|---|---|---|---|
+| T-224 | Fix reward explosion: reward normalization + eval info dict | Eval | ✓ | Reward divided by initial_cash; _eval_agent and _train_ra pass real info dict; H1 returns were 10^28% — now bounded |
 | T-223 | Apply team-member bug fixes (off-by-one returns, tx cost, global shock, info dict) | Eval | ✓ | 7 verified fixes from teammate; all trained models invalidated; tests 107→108 passed |
 
 | ID | Title | Role | Status | Notes |
@@ -77,45 +78,22 @@ _(none)_
   compounding returns interpretable (~1100% max vs ~15M%). Eval seeds expanded
   from 2 to 5 for statistical robustness. MeanReversion threshold increased
   from 1% to 5% so it actually trades. (User/Eval decision.)
+- **D-009** (2026-07-12): Applied 7 verified bug fixes from teammate's repo:
+  (1) global shock guard `dragon_boost > 0`, (2-3) off-by-one return indices in
+  simulator/dataset/harness, (4-6) transaction cost deducted from cash + cash clamp
+  + info dict fix, (7) baselines info dict passed to select_action. All trained
+  models invalidated — H1/H2/H3 must be retrained. (Eval/Lead decision — no conflict.)
+- **D-010** (2026-07-12): Reward normalization changed from `reward / curr_value` to
+  `reward / initial_cash`. Old formula collapsed to ±1 in bull markets (since
+  `curr_value` grows with compounding), making episode returns ~±500. New formula gives
+  bounded per-tick rewards (~0.01 = 1% of initial portfolio). Also fixed `_eval_agent`
+  and `_train_ra` to pass real `info` dict to `select_action`. (Eval decision.)
 
 ## Handoffs
 
 | ID | FROM | TO | NEEDS | ACCEPT |
 |---|---|---|---|---|
 | H-001 | Sim | Eval | Market simulator fully tested and ready. Call `CookieClickerMarket(seed=42)` and `generate_regime_dataset()` to start. | **ACCEPTED** — Eval imports sim; TradingEnv wraps market; dataset pipeline in place. |
-
-## Decisions log
-
-- **D-001** (2026-06-22): Tech stack is **PyTorch** for DQN, scikit-learn for
-  classifiers, NumPy/Pandas for the simulator. (User confirmation.)
-- **D-002** (2026-06-22): Simulator follows `minigameMarket.js` line-for-line,
-  with `dragonBoost = 0`. (User confirmation: "closely follow the market of
-  cookie clicker.")
-- **D-003** (2026-06-22): Build scope is **simulator first, then pause** before
-  classifiers/DQN. (User confirmation.)
-- **D-004** (2026-06-22): Three-agent split: **Sim / Eval / Lead**, with
-  Lead owning only `collaboration/`. Exclusive folder ownership per role.
-  Conflict policy: 2-of-3 vote; ties → human.
-- **D-005** (2026-06-22): Regime-switching rule is the JS rule verbatim with
-  `dragonBoost = 0`, weights `[0,1,1,2,2,3,4,5]`. (Lead proposal — Sim to
-  confirm via handoff when porting.)
-- **D-007** (2026-07-10): Regime labels consolidated from 6 classes to 4 macro-classes:
-  Stable (0), Bull (1=Bullish+StrongBull merged), Bear (2=Bearish+StrongBear merged),
-  Chaotic (3). Random baseline: 1/4=25.0% (was 1/6≈16.7%). RA-DQN state dim:
-  8+4=12 (was 8+6=14). (User decision — no conflict.)
-- **D-006** (2026-07-10): Classifier model set expanded from LogReg+RF+MLP to 5 models:
-  LogReg, RandomForest, ExtraTrees, GradientBoosting, MLP. Dataset increased from 5k to
-  20k ticks. Feature set redesigned to 18 features targeting regime-discriminating
-  JS dynamics. (Eval decision — no conflict.)
-- **D-008** (2026-07-11): Episode length reduced from 1000 to 500 ticks to keep
-  compounding returns interpretable (~1100% max vs ~15M%). Eval seeds expanded
-  from 2 to 5 for statistical robustness. MeanReversion threshold increased
-  from 1% to 5% so it actually trades. (User/Eval decision.)
-- **D-009** (2026-07-12): Applied 7 verified bug fixes from team member's repo:
-  (1) global shock guard `dragon_boost > 0`, (2-3) off-by-one return indices in
-  simulator/dataset/harness, (4-6) transaction cost deducted from cash + cash clamp
-  + info dict fix, (7) baselines info dict passed to select_action. All trained
-  models invalidated — H1/H2/H3 must be retrained. (Eval/Lead decision — no conflict.)
 
 ## Results Summary (2026-07-12 — PRELIMINARY, ALL MODELS MUST RETRAIN)
 

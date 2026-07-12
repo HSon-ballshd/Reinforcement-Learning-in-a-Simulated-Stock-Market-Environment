@@ -110,13 +110,9 @@ class TradingEnv:
             self.cash -= cost
             self.cash = max(self.cash, 0.0)  # clamp tiny negative floats from float rounding
 
-        # Normalise by CURRENT portfolio value to keep rewards bounded
-        # (dividing by initial_cash lets returns explode in bull markets)
-        denom = curr_value if curr_value > 0 else self.initial_cash
-        reward = reward / denom
-
-        # Clip to [-1, 1] to prevent gradient explosions from extreme steps
-        reward = float(np.clip(reward, -1.0, 1.0))
+        # Normalise by initial cash so reward is always a small fraction (e.g. 0.01 = 1%
+        # of portfolio per tick), keeping it bounded regardless of compounding gains.
+        reward = reward / self.initial_cash
 
         obs  = self._get_obs()
         done = self._is_done()
