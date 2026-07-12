@@ -113,7 +113,10 @@ class MeanReversionAgent(BaseAgent):
 
         holdings = info.get('holdings', 0)
 
-        if price <= lo:
+        if price <= lo and holdings <= 0:
+            # Only BUY if price is cheap AND we don't already hold shares.
+            # Without the holdings check, MeanReversion repeatedly BUY-attempts
+            # every tick while holding, wasting compute on 0-share orders.
             return TradingEnv.BUY
         elif price >= hi and holdings > 0:
             return TradingEnv.SELL

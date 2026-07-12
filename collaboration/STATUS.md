@@ -14,8 +14,8 @@
 
 | ID | Title | Role | Notes |
 |---|---|---|---|
-| T-300 | H3: RA-DQN vs plain DQN comparison | Eval | Models invalidated by T-223/T-224/T-225 — retraining required |
-| T-225 | Replace Stacking with RandomForest as best classifier | Eval | Stacking 75.9% vs RF 75.1% — 1% gap not worth 10× slower; RA-DQN eval will be much faster |
+| T-300 | H3: RA-DQN vs plain DQN comparison | Eval | Models invalidated by T-223/T-224/T-225/T-226 — retraining required |
+| T-226 | Fix tx cost: BUY cost from cash before trade; MeanReversion BUY guard | Eval | Tx cost now pre-deducted from cash (can't buy without covering cost); MeanReversion only BUY when not already holding; 35 buys/34 sells vs 184 buys before |
 
 ## Proposed
 
@@ -29,9 +29,10 @@ _(none)_
 
 | ID | Title | Role | Status | Notes |
 |---|---|---|---|---|
-| T-225 | Replace Stacking with RandomForest as best classifier | Eval | ✓ | Stacking removed from classifier pipeline; RF selected as best (75.1% test vs 75.9%); RA-DQN eval now ~10× faster |
-| T-224 | Fix reward explosion: reward normalization + eval info dict | Eval | ✓ | Reward divided by initial_cash; _eval_agent and _train_ra pass real info dict; H1 returns were 10^28% — now bounded |
-| T-223 | Apply team-member bug fixes (off-by-one returns, tx cost, global shock, info dict) | Eval | ✓ | 7 verified fixes from teammate; all trained models invalidated; tests 107→108 passed |
+| T-226 | Fix tx cost: BUY cost from cash before trade; MeanReversion BUY guard | Eval | ✓ | Tx cost pre-deducted so agent can't overspend; MeanReversion BUY-only-when-not-holding; 35 trades vs 184 before |
+| T-225 | Replace Stacking with RandomForest as best classifier | Eval | ✓ | Stacking removed; RF selected (75.1%); RA-DQN eval ~10× faster |
+| T-224 | Fix reward explosion: reward normalization + eval info dict | Eval | ✓ | Reward divided by initial_cash; _eval_agent/_train_ra pass real info dict |
+| T-223 | Apply team-member bug fixes (off-by-one returns, tx cost, global shock, info dict) | Eval | ✓ | 7 verified fixes from teammate; models invalidated; tests 107→108 passed |
 
 | ID | Title | Role | Status | Notes |
 |---|---|---|---|---|

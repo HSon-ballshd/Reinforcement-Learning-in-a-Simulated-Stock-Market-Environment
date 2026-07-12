@@ -93,8 +93,8 @@ class TradingEnv:
 
         prev_value = self._portfolio_value()
 
-        # Execute action
-        self._execute(action)
+        # Execute action — tx cost already deducted from cash inside _execute()
+        cost = self._execute(action)
 
         # Advance the market by one tick
         self.market.tick()
@@ -102,13 +102,6 @@ class TradingEnv:
         # New portfolio value
         curr_value = self._portfolio_value()
         reward     = curr_value - prev_value
-
-        # Transaction-cost penalty — deducted from both reward AND cash
-        if action in (self.BUY, self.SELL):
-            cost = self.transaction_cost_pct * curr_value
-            reward -= cost
-            self.cash -= cost
-            self.cash = max(self.cash, 0.0)  # clamp tiny negative floats from float rounding
 
         # Normalise by initial cash so reward is always a small fraction (e.g. 0.01 = 1%
         # of portfolio per tick), keeping it bounded regardless of compounding gains.
@@ -123,7 +116,7 @@ class TradingEnv:
             'price':           self.market.stocks[0]['price'],
             'action':          action,
             'step':            self._step_count,
-            'transaction_cost': cost if action in (self.BUY, self.SELL) else 0.0,
+            'transaction_cost': cost,
         }
 
         return obs, reward, done, info
@@ -218,29 +211,45 @@ class TradingEnv:
         price = self.market.stocks[0]['price']
         return self.cash + self.holdings * price
 
-    def _execute(self, action: int) -> None:
-        """Apply BUY or SELL; HOLD is a no-op."""
+    def _execute(self, action: int) -> float:
+        """
+        Apply BUY or SELL; HOLD is a no-op.
+
+        BUY:  deducts (spend + tx_cost) from cash. Cash must cover both spend AND cost.
+              If cash < cost, no trade (can't buy without paying tx cost).
+        SELL: deducts cost from proceeds. Can sell even with $0 cash.
+              Cost is paid from the sale proceeds.
+
+        Returns the tx cost paid (0.0 if no trade or HOLD).
+        """
         price = self.market.stocks[0]['price']
         if price <= 0:
-            return  # Defensive: avoid divide-by-zero
+            return 0.0
 
         if action == self.BUY:
-            # Invest up to max_position_frac of current portfolio value
+            # Reserve cash for (spend + tx_cost). If cash is $0, can't buy.
             max_invest   = self._portfolio_value() * self.max_position_frac
-            invest_amount = min(self.cash, max_invest)
-            if invest_amount > 0:
-                shares        = invest_amount / price
+            spend_amount = min(self.cash / (1.0 + self.transaction_cost_pct), max_invest)
+            if spend_amount > 0:
+                cost = self.transaction_cost_pct * spend_amount
+                shares = spend_amount / price
                 self.holdings += shares
-                self.cash    -= invest_amount
+                self.cash    -= spend_amount + cost
+                return cost
+            return 0.0
 
         elif action == self.SELL:
-            # Sell up to max_position_frac of current holdings
             max_sell    = self.holdings * self.max_position_frac
             sell_shares = min(self.holdings, max_sell)
             if sell_shares > 0:
-                proceeds      = sell_shares * price
+                proceeds = sell_shares * price
+                cost     = self.transaction_cost_pct * proceeds
                 self.holdings -= sell_shares
-                self.cash    += proceeds
+                self.cash    += proceeds - cost
+                return cost
+            return 0.0
+
+        return 0.0
 
     def _is_done(self) -> bool:
         if self.max_steps is not None and self._step_count >= self.max_steps:
